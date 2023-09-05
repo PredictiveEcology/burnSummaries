@@ -12,9 +12,17 @@ defineModule(sim, list(
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("NEWS.md", "README.md", "burnSummaries.Rmd"),
-  reqdPkgs = list("PredictiveEcology/SpaDES.core@development (>= 2.0.2.9002)", "ggplot2"),
+  reqdPkgs = list("data.table", "ggplot2", "kSamples", "LandWebUtils",
+                  "patchwork", "raster", "rasterVis", "SpaDES.core"),
   parameters = bindrows(
-    #defineParameter("paramName", "paramClass", value, min, max, "parameter description"),
+    defineParameter("reps", "integer", 1L:10L, 1L, NA_integer_,
+                    paste("number of replicates/runs per study area.")),
+    defineParameter("simOutputPath", "character", outputPath(sim), NA, NA,
+                    "Directory specifying the location of the simulation outputs."),
+    defineParameter("upload", "logical", FALSE, NA, NA,
+                    "if TRUE, uses the `googledrive` package to upload figures."),
+    defineParameter("uploadTo", "character", NA, NA, NA,
+                    paste("if `upload = TRUE`, a Google Drive folder id corresponding to `.studyAreaName`.")),
     defineParameter(".plots", "character", "screen", NA, NA,
                     "Used by Plots function, which can be optionally used here"),
     defineParameter(".plotInitialTime", "numeric", start(sim), NA, NA,
@@ -35,12 +43,14 @@ defineModule(sim, list(
                     "Should caching of events or module be used?")
   ),
   inputObjects = bindrows(
-    #expectsInput("objectName", "objectClass", "input object description", sourceURL, ...),
-    expectsInput(objectName = NA, objectClass = NA, desc = NA, sourceURL = NA)
+    expectsInput("speciesLayers", "RasterStack",
+                 desc = "initial percent cover raster layers used for simulation."),
+    expectsInput("speciesLayers", "RasterStack",
+                 desc = "initial percent cover raster layers used for simulation.")
   ),
   outputObjects = bindrows(
-    #createsOutput("objectName", "objectClass", "output object description", ...),
-    createsOutput(objectName = NA, objectClass = NA, desc = NA)
+    createsOutput("fireSizes", "data.table", "summary fire sizes table"),
+    createsOutput("friSummary", "data.table", "summary fire return interval table")
   )
 ))
 
@@ -59,7 +69,13 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
 
       # schedule future event(s)
       sim <- scheduleEvent(sim, P(sim)$.plotInitialTime, "burnSummaries", "plot")
-      sim <- scheduleEvent(sim, P(sim)$.saveInitialTime, "burnSummaries", "save")
+      sim <- scheduleEvent(sim, P(sim)$.saveInitialTime, "burnSummaries", "areaBurned")
+      sim <- scheduleEvent(sim, P(sim)$.saveInitialTime, "burnSummaries", "fireReturnIntervals")
+      sim <- scheduleEvent(sim, P(sim)$.saveInitialTime, "burnSummaries", "fireSizes")
+
+      if (isTRUE(P(sim)$upload)) {
+        sim <- scheduleEvent(sim, end(sim), "LandWeb_summary", "upload", .last())
+      }
     },
     plot = {
       # ! ----- EDIT BELOW ----- ! #
@@ -73,45 +89,38 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
 
       # ! ----- STOP EDITING ----- ! #
     },
-    save = {
+    upload = {
+      # ! ----- EDIT BELOW ----- ! #
+      browser() ## TODO
+      mod$files2upload <- set_names(mod$files2upload, basename(mod$files2upload))
+
+      gid <- as_id(sim$uploadTo[[P(sim)$.studyAreaName]])
+      prevUploaded <- drive_ls(gid)
+      toUpload <- mod$files2upload[!(basename(mod$files2upload) %in% prevUploaded$name)]
+      uploaded <- map(toUpload, ~ drive_upload(.x, path = gid))
+      # ! ----- STOP EDITING ----- ! #
+    },
+    areaBurned = {
       # ! ----- EDIT BELOW ----- ! #
       # do stuff for this event
 
-      # e.g., call your custom functions/methods here
-      # you can define your own methods below this `doEvent` function
-
-      # schedule future event(s)
-
-      # e.g.,
-      # sim <- scheduleEvent(sim, time(sim) + P(sim)$.saveInterval, "burnSummaries", "save")
+      sim <- AreaBurned(sim)
 
       # ! ----- STOP EDITING ----- ! #
     },
-    event1 = {
+    fireReturnIntervals = {
       # ! ----- EDIT BELOW ----- ! #
       # do stuff for this event
 
-      # e.g., call your custom functions/methods here
-      # you can define your own methods below this `doEvent` function
-
-      # schedule future event(s)
-
-      # e.g.,
-      # sim <- scheduleEvent(sim, time(sim) + increment, "burnSummaries", "templateEvent")
+      sim <- FireReturnIntervals(sim)
 
       # ! ----- STOP EDITING ----- ! #
     },
-    event2 = {
+    fireSizes = {
       # ! ----- EDIT BELOW ----- ! #
       # do stuff for this event
 
-      # e.g., call your custom functions/methods here
-      # you can define your own methods below this `doEvent` function
-
-      # schedule future event(s)
-
-      # e.g.,
-      # sim <- scheduleEvent(sim, time(sim) + increment, "burnSummaries", "templateEvent")
+      sim <- FireSizes(sim)
 
       # ! ----- STOP EDITING ----- ! #
     },
@@ -128,69 +137,284 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
 Init <- function(sim) {
   # # ! ----- EDIT BELOW ----- ! #
 
+  flammableMap <- NULL
+  lthfc <- NULL
+  pixelRes <- NULL
+
+  burnMaps <- lapply(P(sim)$reps, function(rep) {
+    fsim <- findSimFile(outputPath(sim), rep)
+
+    tmpSim <- loadSimList(fsim)
+
+    if (rep == 1L) {
+      ## all reps have same flammable + LTHFC map
+      flammableMap <<- tmpSim[["rstFlammable"]] ## RasterLayer
+      lthfc <<- tmpSim[["fireReturnInterval"]] ## RasterLayer
+      pixelRes <<- res(tmpSim[["rasterToMatch"]]) ## c(250, 250)
+    }
+
+    ## sanity check
+    compareRaster(tmpSim[["rstCurrentBurnCumulative"]], tmpSim[["rstFlammable"]], res = TRUE, orig = TRUE)
+
+    ## mean annual cumulative burn map
+    tmpSim[["rstCurrentBurnCumulative"]] / (end(tmpSim) - start(tmpSim))
+  }) |> raster::stack() |>
+    raster::calc(sum, na.rm = TRUE)
+
+  mod$flammmableMap <- flammableMap
+  mod$lthfc <- lthfc
+  mod$meanAnnualCumulBurnMap <- burnMaps / length(reps)
+  mod$pixelRes <- pixelRes
+
+  ## remove non-flammable pixels
+  toRm <- which(is.na(flammableMap[]) | flammableMap[] == 0)
+  if (length(toRm) > 0) {
+    mod$meanAnnualCumulBurnMap[toRm] <- NA
+    mod$flammableMap[toRm] <- NA
+    mod$lthfc[toRm] <- NA
+  }
+
   # ! ----- STOP EDITING ----- ! #
 
   return(invisible(sim))
 }
 
-### template for save events
-Save <- function(sim) {
-  # ! ----- EDIT BELOW ----- ! #
-  # do stuff for this event
-  sim <- saveFiles(sim)
+## TODO: this event is LandMine-specific; move there or use conditionally based on existence of fireReturnInterval raster
+FireReturnIntervals <- function(sim) {
+  friValues <- getValues(mod$lthfc) |>
+    unique() |>
+    na.omit() |>
+    sort()
 
-  # ! ----- STOP EDITING ----- ! #
+  simFRIs <- vapply(friValues, function(fri) {
+    pixIds <- which(getValues(mod$lthfc) == fri)
+    1 / (sum(mod$meanAnnualCumulBurnMap[pixIds]) / (length(pixIds)))
+  }, numeric(1))
+
+  sim$friSummary <- data.table(
+    simArea = P(sim)$.studyAreaName,
+    LTHFC = friValues,
+    FRI = simFRIs,
+    stringsAsFactors = FALSE
+  )
+
+  f <- file.path(outputPath(sim), paste0("burnSummaries_FRI_table.csv"))
+  fwrite(sim$friSummary, f) ## TODO: add this file to list of outputs
+
+  return(invisible(sim))
+}
+
+FireSizes <- function(sim) {
+  sim$fireSizes <- lapply(P(sim)$reps, function(rep) {
+    fsim <- findSimFile(outputPath(sim), rep)
+
+    tmpSim <- loadSimList(fsim)
+
+    if (!is.null(tmpSim[["fireSizes"]])) {
+      fs <- rbindlist(tmpSim[["fireSizes"]], idcol = "year")
+      fs[, `:=`(simArea = area, rep = rep)]
+      setcolorder(fs, c("simArea", "rep", "year", "size", "maxSize"))
+      setnames(fs, old = c("size", "maxSize"), new = c("simSize", "expSize"))
+    } else {
+      NULL
+    }
+  }) |>
+    rbindlist()
+
+  sim$fireSizes[, simArea := P(sim)$.studyAreaName]
+
+  f <- file.path(P(sim)$simOutputPath, paste0("burnSummaries_fireSizes.csv"))
+  fwrite(sim$fireSizes, f) ## TODO: add this file to list of outputs
+
   return(invisible(sim))
 }
 
 ### template for plot events
 plotFun <- function(sim) {
   # ! ----- EDIT BELOW ----- ! #
-  # do stuff for this event
-  sampleData <- data.frame("TheSample" = sample(1:10, replace = TRUE))
-  Plots(sampleData, fn = ggplotFn) # needs ggplot2
+browser()
+  ## TODO: use Plots
 
-  # ! ----- STOP EDITING ----- ! #
-  return(invisible(sim))
-}
+  pixelSizeHa <- prod(mod$pixelRes) / 10^4
 
-### template for your event1
-Event1 <- function(sim) {
-  # ! ----- EDIT BELOW ----- ! #
-  # THE NEXT TWO LINES ARE FOR DUMMY UNIT TESTS; CHANGE OR DELETE THEM.
-  # sim$event1Test1 <- " this is test for event 1. " # for dummy unit test
-  # sim$event1Test2 <- 999 # for dummy unit test
+  ## cumulative burn maps
+  ggCumulBurnMapExp <- rasterVis::levelplot(
+    mod$meanAnnualCumulBurnMapHistoric,
+    main = paste("Historic mean annual cumulative burn map for", P(sim)$.studyAreaName),
+    margin = FALSE,
+    par.settings = magmaTheme ## TODO: use decent colour scheme
+  )
 
-  # ! ----- STOP EDITING ----- ! #
-  return(invisible(sim))
-}
+  ggCumulBurnMapSim <- rasterVis::levelplot(
+    mod$meanAnnualCumulBurnMap,
+    main = paste("Simulated mean annual cumulative burn map for", P(sim)$.studyAreaName),
+    margin = FALSE,
+    par.settings = magmaTheme ## TODO: use decent colour scheme
+  )
 
-### template for your event2
-Event2 <- function(sim) {
-  # ! ----- EDIT BELOW ----- ! #
-  # THE NEXT TWO LINES ARE FOR DUMMY UNIT TESTS; CHANGE OR DELETE THEM.
-  # sim$event2Test1 <- " this is test for event 2. " # for dummy unit test
-  # sim$event2Test2 <- 777  # for dummy unit test
+  ## TODO: plot cumulative burn map from NFDB data beside the simulated cumul burn map
+  ggCumulBurnMap <- ggCumulBurnMapExp + ggCumulBurnMapSim
+
+  fggCumulBurnMap <- file.path(figurePath(sim), "cumulative_burn_maps.png")
+  png(fggCumulBurnMap, height = 1000, width = 2000)
+  print(ggCumulBurnMap)
+  dev.off()
+
+  ## LTHFC/FRI polygons
+  ggFriPolys <- rasterVis::levelplot(
+    mod$lthfc,
+    main = paste("Long-term historic fire cycle (LTHFC) map for", P(sim)$.studyAreaName),
+    margin = FALSE,
+    par.settings = PuOrTheme
+  )
+
+  fggFriPolys <- file.path(figurePath(sim), "LandMine_LTHFC_map.png")
+  png(fggFriPolys, height = 1000, width = 1000)
+  print(ggFriPolys)
+  dev.off()
+
+  ## expected vs simulated fire return intervals
+  ggFriExpVsSim <- ggplot(friTable, aes(x = LTHFC, y = FRI)) +
+    geom_point() +
+    xlab("Expected fire return interval (years)") +
+    ylab("Simulated fire return interval (years)") +
+    ggtitle(paste("Expected vs. simulated fire return intervals in", P(sim)$.studyAreaName)) +
+    theme_bw() +
+    scale_y_continuous(limits = c(0, NA)) +
+    scale_x_continuous(limits = c(0, NA)) +
+    geom_abline(slope = 1, lty = "dotted")
+
+  fggFriExpVsSim <- file.path(figurePath(sim), "burnSummaries_exp_vs_sim_FRI.png")
+  ggsave(filename = fggFriExpVsSim,
+         plot = ggFriExpVsSim,
+         height = 1000, width = 1000) ## NOTE: keep square aspect ratio
+
+  ## fire size histograms w/ medion fire sizes
+  subsetDT <- sim$fireSizes[simArea == P(sim)$.studyAreaName & (expSize > 0 | simSize > 0), ]
+
+  subsetDT[, expSizeHa := expSize * pixelSizeHa]
+  subsetDT[, simSizeHa := simSize * pixelSizeHa]
+
+  subsetDT[, logExpSize := log(expSize)]
+  subsetDT[, logSimSize := log(simSize)]
+
+  subsetDT[, logExpSizeHa := log(expSize * pixelSizeHa)]
+  subsetDT[, logSimSizeHa := log(simSize * pixelSizeHa)]
+
+  ## per Dave's original email:
+  ## > What I would like is both the number of disturbances on the y axis,
+  ## > and the area of disturbances on a second y-axis graph.
+  ## Per Eliot: x-axis uses same bins as histogram, with y-axis of median area burned per bin
+
+  maxLogExpSizeHa <- max(subsetDT$logExpSizeHa)
+  maxLogSimSizeHa <- max(subsetDT$logSimSizeHa)
+
+  breaks <- seq(1.0, ceiling(max(maxLogExpSizeHa, maxLogSimSizeHa) / 0.5) * 0.5, 0.5)
+
+  hexp <- hist(subsetDT$logExpSizeHa, breaks = breaks, plot = FALSE)
+  hsim <- hist(subsetDT$logSimSizeHa, breaks = breaks, plot = FALSE)
+
+  countsExp <- hexp$counts ## correct counts?
+  countsSim <- hsim$counts ## correct counts?
+
+  subsetDT[, binIDexp := cut(logExpSizeHa, hexp$breaks)]
+  subsetDT[, binIDsim := cut(logSimSizeHa, hsim$breaks)]
+
+  summaryExpDT <- subsetDT[, lapply(.SD, stats::median, na.rm = TRUE), by = binIDexp, .SDcols = "expSizeHa"]
+  summarySimDT <- subsetDT[, lapply(.SD, stats::median, na.rm = TRUE), by = binIDsim, .SDcols = "simSizeHa"]
+  setnames(summaryExpDT, "expSizeHa", "medExpSizeHa")
+  setnames(summarySimDT, "simSizeHa", "medSimSizeHa")
+
+  summaryExpDT <- summaryExpDT[, medLogExpSizeHa := log(medExpSizeHa)]
+  summarySimDT <- summarySimDT[, medLogSimSizeHa := log(medSimSizeHa)]
+
+  midsExp <- cbind(
+    as.numeric( sub("\\((.+),.*", "\\1", summaryExpDT$binIDexp) ),
+    as.numeric( sub("[^,]*,([^]]*)\\]", "\\1", summaryExpDT$binIDexp) )
+  ) |>
+    rowMeans()
+  summaryExpDT <- summaryExpDT[, midsExp := midsExp]
+
+  midsSim <- cbind(
+    as.numeric( sub("\\((.+),.*", "\\1", summarySimDT$binIDsim) ),
+    as.numeric( sub("[^,]*,([^]]*)\\]", "\\1", summarySimDT$binIDsim) )
+  ) |>
+    rowMeans()
+  summarySimDT <- summarySimDT[, midsSim := midsSim]
+
+  scaleFactorExp <- max(countsExp) / maxLogExpSizeHa
+  scaleFactorSim <- max(countsSim) / maxLogSimSizeHa
+
+  y1col <- "grey20"
+  y2col <- "darkred"
+  y1lab <- "Total number of fires across all simulated years"
+  y2lab <- "Median log[fireSize] (ha)"
+  x_lab <- "log[fireSize] (ha)"
+
+  ggHistExp <- ggplot(subsetDT, aes(x = logExpSizeHa)) +
+    geom_histogram(breaks = breaks, alpha = 0.5, fill = y1col) +
+    stat_summary_bin(data = summaryExpDT,
+                     mapping = aes(x = midsExp, y = medLogExpSizeHa * scaleFactorExp),
+                     fun = "identity", geom = "point", breaks = breaks, col = y2col) +
+    scale_y_continuous(y1lab, sec.axis = sec_axis(~ . / scaleFactorExp , name = y2lab)) +
+    xlab(x_lab) +
+    ggtitle(paste("Total expected number and size of fires in", P(sim)$.studyAreaName)) +
+    theme_bw() +
+    theme(
+      axis.title.y.left = element_text(color = y1col),
+      axis.text.y.left = element_text(color = y1col),
+      axis.title.y.right = element_text(color = y2col),
+      axis.text.y.right = element_text(color = y2col)
+    )
+
+  fggHistExp <- file.path(figurePath(sim), "simulated_number_size_fires.png")
+  ggsave(ggHistExp, fggHistExp, height = 1000, width = 1000)
+
+  ggHistSim <- ggplot(subsetDT, aes(x = logSimSizeHa)) +
+    geom_histogram(breaks = breaks, alpha = 0.5, fill = y1col) +
+    stat_summary_bin(data = summarySimDT,
+                     mapping = aes(x = midsSim, y = medLogSimSizeHa * scaleFactorSim),
+                     fun = "identity", geom = "point", breaks = breaks, col = y2col) +
+    scale_y_continuous(y1lab, sec.axis = sec_axis(~ . / scaleFactorSim , name = y2lab)) +
+    xlab(x_lab) +
+    ggtitle(paste("Total simulated number and size of fires in", P(sim)$.studyAreaName)) +
+    theme_bw() +
+    theme(
+      axis.title.y.left = element_text(color = y1col),
+      axis.text.y.left = element_text(color = y1col),
+      axis.title.y.right = element_text(color = y2col),
+      axis.text.y.right = element_text(color = y2col)
+    )
+
+  fggHistSim <- file.path(figurePath(sim), "expected_number_size_fires.png")
+  ggsave(ggHistSim, fggHistSim, height = 1000, width = 1000)
+
+  ## exp vs sim fire sizes
+  ggExpVsSimHex <- ggplot(subsetDT, aes(x = expSizeHa, y = simSizeHa)) +
+    geom_hex(bins = 50) +
+    xlab("Expected fire size (ha)") +
+    ylab("Simulated fire size (ha)") +
+    ggtitle(paste("Expected vs. simulated fire sizes in", P(sim)$.sutdyAreaName)) +
+    theme_bw() +
+    geom_abline(slope = 1, lty = "dotted")
+
+  fggExpVsSimHex <- file.path(figurePath(sim), "burnSummaries_exp_vs_sim_hex.png")
+  ggsave(filename = fggExpVsSimHex,
+         plot = ggExpVsSimHex,
+         height = 1000, width = 1000) ## NOTE: keep square aspect ratio
+
+
+  ## test fire size distributions (very slow...)
+  kSamples::ad.test(subsetDT$simSize, subsetDT$expSize) ## TODO: output this somewhere...
+
+  ##  track which plot files to upload
+  mod$files2upload <- c(fggFriPolys, fggFriExpVsSim, fggHistExp, fggHistSim, fggExpVsSimHex)
 
   # ! ----- STOP EDITING ----- ! #
   return(invisible(sim))
 }
 
 .inputObjects <- function(sim) {
-  # Any code written here will be run during the simInit for the purpose of creating
-  # any objects required by this module and identified in the inputObjects element of defineModule.
-  # This is useful if there is something required before simulation to produce the module
-  # object dependencies, including such things as downloading default datasets, e.g.,
-  # downloadData("LCC2005", modulePath(sim)).
-  # Nothing should be created here that does not create a named object in inputObjects.
-  # Any other initiation procedures should be put in "init" eventType of the doEvent function.
-  # Note: the module developer can check if an object is 'suppliedElsewhere' to
-  # selectively skip unnecessary steps because the user has provided those inputObjects in the
-  # simInit call, or another module will supply or has supplied it. e.g.,
-  # if (!suppliedElsewhere('defaultColor', sim)) {
-  #   sim$map <- Cache(prepInputs, extractURL('map')) # download, extract, load file from url in sourceURL
-  # }
-
   #cacheTags <- c(currentModule(sim), "function:.inputObjects") ## uncomment this if Cache is being used
   dPath <- asPath(getOption("reproducible.destinationPath", dataPath(sim)), 1)
   message(currentModule(sim), ": using dataPath '", dPath, "'.")
@@ -201,9 +425,9 @@ Event2 <- function(sim) {
   return(invisible(sim))
 }
 
-ggplotFn <- function(data, ...) {
-  ggplot2::ggplot(data, ggplot2::aes(TheSample)) +
-    ggplot2::geom_histogram(...)
+## older version of SpaDES.core used here doesn't have this function
+if (packageVersion("SpaDES.core" < "2.0.2.9001")) {
+  figurePath <- function(sim) {
+    file.path(outputPath(sim), "figures", current(sim)[["moduleName"]])
+  }
 }
-
-### add additional events as needed by copy/pasting from above
