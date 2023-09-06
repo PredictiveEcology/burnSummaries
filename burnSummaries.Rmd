@@ -57,7 +57,7 @@ Table \@ref(tab:moduleInputs-burnSummaries) shows the full list of module inputs
 df_inputs <- SpaDES.core::moduleInputs("burnSummaries", "..")
 knitr::kable(df_inputs,
              caption = "List of (ref:burnSummaries) input objects and their description.") |>
-  kableExtra::kable_styling(latex_options = "scale_down", full_width = TRUE)
+  kableExtra::kable_styling(latex_options = "scale_down", full_width = FALSE)
 ```
 
 Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnSummaries))
@@ -66,7 +66,7 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
 ```{r moduleParams-burnSummaries, echo = FALSE, eval = TRUE, message = FALSE, warning = FALSE}
 df_params <- SpaDES.core::moduleParams("burnSummaries", "..")
 knitr::kable(df_params, caption = "List of (ref:burnSummaries) parameters and their description.") |>
-  kableExtra::kable_styling(latex_options = "scale_down", full_width = TRUE)
+  kableExtra::kable_styling(latex_options = "scale_down", full_width = FALSE)
 ```
 
 ### Events
@@ -88,7 +88,7 @@ Description of the module outputs (Table \@ref(tab:moduleOutputs-burnSummaries))
 ```{r moduleOutputs-burnSummaries, echo = FALSE, eval = TRUE, message = FALSE, warning = FALSE}
 df_outputs <- SpaDES.core::moduleOutputs("burnSummaries", "..")
 knitr::kable(df_outputs, caption = "List of (ref:burnSummaries) outputs and their description.") |>
-  kableExtra::kable_styling(latex_options = "scale_down", full_width = TRUE)
+  kableExtra::kable_styling(latex_options = "scale_down", full_width = FALSE)
 ```
 
 ### Links to other modules
