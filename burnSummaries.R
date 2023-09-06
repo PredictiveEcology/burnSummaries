@@ -12,8 +12,8 @@ defineModule(sim, list(
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("NEWS.md", "README.md", "burnSummaries.Rmd"),
-  reqdPkgs = list("data.table", "ggplot2", "kSamples", "LandWebUtils",
-                  "patchwork", "raster", "rasterVis", "SpaDES.core"),
+  reqdPkgs = list("data.table", "fasterize", "ggplot2", "kSamples", "LandWebUtils",
+                  "patchwork", "raster", "rasterVis", "reproducible", "SpaDES.core"),
   parameters = bindrows(
     defineParameter("reps", "integer", 1L:10L, 1L, NA_integer_,
                     paste("number of replicates/runs per study area.")),
@@ -142,15 +142,32 @@ Init <- function(sim) {
   }) |> raster::stack() |>
     raster::calc(sum, na.rm = TRUE)
 
-  mod$flammmableMap <- flammableMap
-  mod$meanAnnualCumulBurnMap <- burnMaps / length(allReps)
-  mod$pixelRes <- pixelRes
+  flammmableMap <- flammableMap
+  meanAnnualCumulBurnMap <- burnMaps / length(allReps)
+
+  firePolys <- Cache(
+    prepInputs,
+    fun = "sf::st_read",
+    targetFile = "NFDB_poly_20210707.shp" ## TODO: this shouldn't be needed; needs to be updated
+  ) |>
+    sf::st_cast("MULTIPOLYGON") |>
+    sf::st_transform(crs(flammableMap))
+
+  fireYears <- firePolys[firePolys$YEAR > 0, ][["YEAR"]] |> unique() |> sort()
+  meanAnnualCumulBurnMapHistoric <- fasterize::fasterize(firePolys, flammableMap, field = "YEAR", fun = "count")
+  meanAnnualCumulBurnMapHistoric <- meanAnnualCumulBurnMapHistoric / length(fireYears)
 
   nonFlammable <- which(is.na(flammableMap[]) | flammableMap[] == 0)
   if (length(nonFlammable) > 0) {
-    mod$meanAnnualCumulBurnMap[nonFlammable] <- NA
-    mod$flammableMap[nonFlammable] <- NA
+    meanAnnualCumulBurnMap[nonFlammable] <- NA
+    meanAnnualCumulBurnMapHistoric[nonFlammable] <- NA
+    flammableMap[nonFlammable] <- NA
   }
+
+  mod$flammableMap <- flammableMap
+  mod$meanAnnualCumulBurnMap <- meanAnnualCumulBurnMap
+  mod$meanAnnualCumulBurnMapHistoric <- meanAnnualCumulBurnMapHistoric
+  mod$pixelRes <- pixelRes
 
   # ! ----- STOP EDITING ----- ! #
 
@@ -192,13 +209,12 @@ plotFun <- function(sim) {
   pixelSizeHa <- prod(mod$pixelRes) / 10^4
 
   ## cumulative burn maps
-  ## TODO: plot cumulative burn map from NFDB data beside the simulated cumul burn map
-  # ggCumulBurnMapExp <- rasterVis::levelplot(
-  #   mod$meanAnnualCumulBurnMapHistoric,
-  #   main = paste("Historic mean annual cumulative burn map for", studyArea),
-  #   margin = FALSE,
-  #   par.settings = magmaTheme ## TODO: use decent colour scheme
-  # )
+  ggCumulBurnMapExp <- rasterVis::levelplot(
+    mod$meanAnnualCumulBurnMapHistoric,
+    main = paste("Historic mean annual cumulative burn map for", studyArea),
+    margin = FALSE,
+    par.settings = magmaTheme ## TODO: use decent colour scheme
+  )
 
   ggCumulBurnMapSim <- rasterVis::levelplot(
     mod$meanAnnualCumulBurnMap,
@@ -207,16 +223,14 @@ plotFun <- function(sim) {
     par.settings = magmaTheme ## TODO: use decent colour scheme
   )
 
-  ggCumulBurnMap <- ggCumulBurnMapSim ## TODO: ggCumulBurnMapExp + ggCumulBurnMapSim
-
   if ("png" %in% P(sim)$.plots) {
     fggCumulBurnMap <- file.path(figurePath(sim), "cumulative_burn_maps.png")
     png(fggCumulBurnMap, height = 1000, width = 2000)
-    print(ggCumulBurnMap)
+    gridExtra::grid.arrange(ggCumulBurnMapExp, ggCumulBurnMapSim, ncol = 2, nrow = 1)
     dev.off()
   }
 
-  ## fire size histograms w/ medion fire sizes
+  ## fire size histograms w/ median fire sizes
   subsetDT <- sim$fireSizes[simArea == studyArea & (expSize > 0 | simSize > 0), ]
 
   subsetDT[, expSizeHa := expSize * pixelSizeHa]
@@ -312,10 +326,10 @@ plotFun <- function(sim) {
 
   if ("png" %in% P(sim)$.plots) {
     fggHistExp <- file.path(figurePath(sim), "expected_number_size_fires.png")
-    ggsave(ggHistExp, fggHistExp, height = 10, width = 10, type = "cairo")
+    ggsave(fggHistExp, ggHistExp, height = 10, width = 10, type = "cairo")
 
     fggHistSim <- file.path(figurePath(sim), "simulated_number_size_fires.png")
-    ggsave(ggHistSim, fggHistSim, height = 10, width = 10, type = "cairo")
+    ggsave(fggHistSim, ggHistSim, height = 10, width = 10, type = "cairo")
   }
 
   ## exp vs sim fire sizes
