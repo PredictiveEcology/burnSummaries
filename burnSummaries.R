@@ -118,7 +118,7 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
 Init <- function(sim) {
   # # ! ----- EDIT BELOW ----- ! #
 
-  allReps <- P(sim)$reps
+  allReps <- sprintf("rep%02d", P(sim)$reps)
   mod$files2upload <- list()
   flammableMap <- NULL
   pixelRes <- NULL
@@ -139,7 +139,8 @@ Init <- function(sim) {
 
     ## mean annual cumulative burn map
     tmpSim[["rstCurrentBurnCumulative"]] / (end(tmpSim) - start(tmpSim))
-  }) |> raster::stack() |>
+  }) |>
+    raster::stack() |>
     raster::calc(sum, na.rm = TRUE)
 
   flammmableMap <- flammableMap
