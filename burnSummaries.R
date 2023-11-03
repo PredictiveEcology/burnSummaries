@@ -181,7 +181,7 @@ FireSummaries <- function(sim) {
   sim$fireSizes <- lapply(P(sim)$reps, function(rep) {
     fsim <- findSimFile(outputDir, rep)
 
-    tmpSim <- loadSimList(fsim)
+    tmpSim <- suppressMessages(loadSimList(fsim))
 
     if (!is.null(tmpSim[["fireSizes"]])) {
       fs <- rbindlist(tmpSim[["fireSizes"]], idcol = "year")
