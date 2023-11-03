@@ -126,9 +126,9 @@ Init <- function(sim) {
   burnMaps <- lapply(allReps, function(rep) {
     fsim <- findSimFile(outputPath(sim), rep)
 
-    tmpSim <- loadSimList(fsim)
+    tmpSim <- suppressMessages(loadSimList(fsim))
 
-    if (rep == 1L) {
+    if (rep %in% c(1L, "rep01")) {
       ## all reps have same flammable map
       flammableMap <<- tmpSim[["rstFlammable"]]   ## RasterLayer
       pixelRes <<- res(tmpSim[["rasterToMatch"]]) ## c(250, 250)
@@ -143,7 +143,6 @@ Init <- function(sim) {
     raster::stack() |>
     raster::calc(sum, na.rm = TRUE)
 
-  flammmableMap <- flammableMap
   meanAnnualCumulBurnMap <- burnMaps / length(allReps)
 
   firePolys <- Cache(
