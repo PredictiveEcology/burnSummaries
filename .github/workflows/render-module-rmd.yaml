@@ -56,7 +56,7 @@ jobs:
 
       - name: Install SpaDES packages
         run: |
-          install.packages("SpaDES", dependencies = TRUE)
+          remotes::install_github("PredictiveEcology/SpaDES@development", dependencies = TRUE)
           remotes::install_github("PredictiveEcology/SpaDES.docs@development")
         shell: Rscript {0}
 
