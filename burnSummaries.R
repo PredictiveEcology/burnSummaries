@@ -43,9 +43,9 @@ defineModule(sim, list(
                     "Should caching of events or module be used?")
   ),
   inputObjects = bindrows(
-    expectsInput("speciesLayers", "RasterStack",
+    expectsInput("speciesLayers", "RasterStack", ## TODO
                  desc = "initial percent cover raster layers used for simulation."),
-    expectsInput("speciesLayers", "RasterStack",
+    expectsInput("speciesLayers", "RasterStack", ## TODO
                  desc = "initial percent cover raster layers used for simulation.")
   ),
   outputObjects = bindrows(
@@ -205,20 +205,20 @@ plotFun <- function(sim) {
   # ! ----- EDIT BELOW ----- ! #
 
   ## TODO: use Plots
-  studyArea <- P(sim)$.studyAreaName
+  studyAreaName <- P(sim)$.studyAreaName
   pixelSizeHa <- prod(mod$pixelRes) / 10^4
 
   ## cumulative burn maps
   ggCumulBurnMapExp <- rasterVis::levelplot(
     mod$meanAnnualCumulBurnMapHistoric,
-    main = paste("Historic mean annual cumulative burn map for", studyArea),
+    main = paste("Historic mean annual cumulative burn map for", studyAreaName),
     margin = FALSE,
     par.settings = magmaTheme ## TODO: use decent colour scheme
   )
 
   ggCumulBurnMapSim <- rasterVis::levelplot(
     mod$meanAnnualCumulBurnMap,
-    main = paste("Simulated mean annual cumulative burn map for", studyArea),
+    main = paste("Simulated mean annual cumulative burn map for", studyAreaName),
     margin = FALSE,
     par.settings = magmaTheme ## TODO: use decent colour scheme
   )
@@ -231,7 +231,7 @@ plotFun <- function(sim) {
   }
 
   ## fire size histograms w/ median fire sizes
-  subsetDT <- sim$fireSizes[simArea == studyArea & (expSize > 0 | simSize > 0), ]
+  subsetDT <- sim$fireSizes[simArea == studyAreaName & (expSize > 0 | simSize > 0), ]
 
   subsetDT[, expSizeHa := expSize * pixelSizeHa]
   subsetDT[, simSizeHa := simSize * pixelSizeHa]
@@ -299,7 +299,7 @@ plotFun <- function(sim) {
                      fun = "identity", geom = "point", breaks = breaks, col = y2col) +
     scale_y_continuous(y1lab, sec.axis = sec_axis(~ . / scaleFactorExp , name = y2lab)) +
     xlab(x_lab) +
-    ggtitle(paste("Total expected number and size of fires in", studyArea)) +
+    ggtitle(paste("Total expected number and size of fires in", studyAreaName)) +
     theme_bw() +
     theme(
       axis.title.y.left = element_text(color = y1col),
@@ -315,7 +315,7 @@ plotFun <- function(sim) {
                      fun = "identity", geom = "point", breaks = breaks, col = y2col) +
     scale_y_continuous(y1lab, sec.axis = sec_axis(~ . / scaleFactorSim , name = y2lab)) +
     xlab(x_lab) +
-    ggtitle(paste("Total simulated number and size of fires in", studyArea)) +
+    ggtitle(paste("Total simulated number and size of fires in", studyAreaName)) +
     theme_bw() +
     theme(
       axis.title.y.left = element_text(color = y1col),
@@ -339,7 +339,7 @@ ggExpVsSim <- ggplot(subsetDT, aes(x = expSizeHa, y = simSizeHa)) +
   scale_y_continuous(limits = c(0, NA)) +
   xlab("Expected fire size (ha)") +
   ylab("Simulated fire size (ha)") +
-  ggtitle(paste("Expected vs. simulated fire sizes in", studyArea)) +
+  ggtitle(paste("Expected vs. simulated fire sizes in", studyAreaName)) +
   theme_bw() +
   geom_abline(slope = 1, lty = "dotted")
 
@@ -347,7 +347,7 @@ ggExpVsSimHex <- ggplot(subsetDT, aes(x = expSizeHa, y = simSizeHa)) +
     geom_hex(bins = 50) +
     xlab("Expected fire size (ha)") +
     ylab("Simulated fire size (ha)") +
-    ggtitle(paste("Expected vs. simulated fire sizes in", studyArea)) +
+    ggtitle(paste("Expected vs. simulated fire sizes in", studyAreaName)) +
     theme_bw() +
     geom_abline(slope = 1, lty = "dotted")
 
