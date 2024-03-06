@@ -24,7 +24,7 @@ jobs:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - uses: r-lib/actions/setup-pandoc@v2
 
@@ -46,25 +46,13 @@ jobs:
             libxml2-dev \
             python3-gdal
 
-      - name: Install remotes, knitr, rmarkdown, bookdown
-        run: |
-          install.packages("remotes")
-          remotes::install_cran("rmarkdown")
-          remotes::install_cran("knitr")
-          remotes::install_cran("bookdown")
-        shell: Rscript {0}
+      - uses: PredictiveEcology/actions/install-Require@v0
+        with:
+          GitTag: '5c44205bf407f613f53546be652a438ef1248147'
 
-      - name: Install SpaDES packages
-        run: |
-          remotes::install_github("PredictiveEcology/SpaDES@development", dependencies = TRUE)
-          remotes::install_github("PredictiveEcology/SpaDES.docs@development")
-        shell: Rscript {0}
+      - uses: PredictiveEcology/actions/install-SpaDES@v0
 
-      - name: Install module package dependencies
-        run: |
-          pkgs <- SpaDES.core::packages(modules = "burnSummaries", paths = "..")
-          Require::Require(pkgs)
-        shell: Rscript {0}
+      - uses: PredictiveEcology/actions/install-Rmd-pkgs@v0
 
       - name: Render module Rmd
         run: |
