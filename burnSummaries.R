@@ -7,18 +7,22 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "0.0.0.9000"),
+  version = list(burnSummaries = "1.0.0"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("NEWS.md", "README.md", "burnSummaries.Rmd"),
-  reqdPkgs = list("data.table", "fasterize", "ggplot2", "kSamples", "LandWebUtils",
-                  "patchwork", "raster", "rasterVis", "reproducible", "SpaDES.core"),
+  reqdPkgs = list("data.table", "ggplot2", "kSamples", "patchwork",
+                  "rasterVis", "reproducible", "SpaDES.core", "terra"),
   parameters = bindrows(
     defineParameter("reps", "integer", 1L:10L, 1L, NA_integer_,
                     paste("number of replicates/runs per study area.")),
+    defineParameter("simOutPrefix", "character", "mySimOut", NA_character_, NA_character_,
+                    "saved simList file prefix"),
     defineParameter("simOutputPath", "character", outputPath(sim), NA, NA,
                     "Directory specifying the location of the simulation outputs."),
+    defineParameter("simTimes", "numeric", c(NA, NA), NA, NA,
+                    "Simulation start and end times when running in 'multi' mode."),
     defineParameter("upload", "logical", FALSE, NA, NA,
                     "if TRUE, uses the `googledrive` package to upload figures."),
     defineParameter("uploadTo", "character", NA, NA, NA,
@@ -35,7 +39,7 @@ defineModule(sim, list(
                     "This describes the simulation time interval between save events."),
     defineParameter(".studyAreaName", "character", NA, NA, NA,
                     "Human-readable name for the study area used - e.g., a hash of the study",
-                          "area obtained using `reproducible::studyAreaName()`"),
+                    "area obtained using `reproducible::studyAreaName()`"),
     ## .seed is optional: `list('init' = 123)` will `set.seed(123)` for the `init` event only.
     defineParameter(".seed", "list", list(), NA, NA,
                     "Named list of seeds to use for each event (names)."),
@@ -43,9 +47,7 @@ defineModule(sim, list(
                     "Should caching of events or module be used?")
   ),
   inputObjects = bindrows(
-    expectsInput("speciesLayers", "RasterStack", ## TODO
-                 desc = "initial percent cover raster layers used for simulation."),
-    expectsInput("speciesLayers", "RasterStack", ## TODO
+    expectsInput("speciesLayers", "SpatRaster",
                  desc = "initial percent cover raster layers used for simulation.")
   ),
   outputObjects = bindrows(
@@ -71,28 +73,14 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
       sim <- scheduleEvent(sim, start(sim), "burnSummaries", "plot")
 
       if (isTRUE(P(sim)$upload)) {
-        sim <- scheduleEvent(sim, end(sim), "LandWeb_summary", "upload", .last())
+        sim <- scheduleEvent(sim, end(sim), "burnSummaries", "upload", .last())
       }
     },
     summary = {
-      # ! ----- EDIT BELOW ----- ! #
-      # do stuff for this event
-
       sim <- FireSummaries(sim)
-
-      # ! ----- STOP EDITING ----- ! #
     },
     plot = {
-      # ! ----- EDIT BELOW ----- ! #
-      # do stuff for this event
-
-      plotFun(sim) # example of a plotting function
-      # schedule future event(s)
-
-      # e.g.,
-      #sim <- scheduleEvent(sim, time(sim) + P(sim)$.plotInterval, "burnSummaries", "plot")
-
-      # ! ----- STOP EDITING ----- ! #
+      plotFun(sim)
     },
     upload = {
       # ! ----- EDIT BELOW ----- ! #
@@ -117,47 +105,67 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
 ### template initialization
 Init <- function(sim) {
   # # ! ----- EDIT BELOW ----- ! #
-
   allReps <- sprintf("rep%02d", P(sim)$reps)
   mod$files2upload <- list()
   flammableMap <- NULL
   pixelRes <- NULL
 
   burnMaps <- lapply(allReps, function(rep) {
-    fsim <- findSimFile(outputPath(sim), rep)
+    fsim <- file.path(outputPath(sim), rep,
+                      sprintf("%s_%04d.qs", P(sim)$simOutPrefix, P(sim)$simTimes[2]))
+    if (!file.exists(fsim)) {
+      fsim <- paste0(tools::file_path_sans_ext(fsim), ".rds") ## fallback to rds if qs not used
+    }
+
+    stopifnot(file.exists(fsim))
 
     tmpSim <- suppressMessages(loadSimList(fsim))
 
-    if (rep %in% c(1L, "rep01")) {
+    if (rep == allReps[1]) {
       ## all reps have same flammable map
-      flammableMap <<- tmpSim[["rstFlammable"]]   ## RasterLayer
-      pixelRes <<- res(tmpSim[["rasterToMatch"]]) ## c(250, 250)
+      flammableMap <<- tmpSim[["rstFlammable"]]
+      pixelRes <<- res(tmpSim[["rasterToMatch"]])
+    }
+
+    ## NOTE: fire models differ in their naming scheme for cumul burn maps
+    ## - LandMine uses `rstCurrentBurnCumulative`;
+    ## - fireSense uses `burnMap`;
+    ## - scfm use `burnMap`;
+    cumulBurnMap <- if (!is.null(tmpSim[["rstCurrentBurnCumulative"]])) {
+      tmpSim[["rstCurrentBurnCumulative"]]
+    } else if (!is.null(tmpSim[["burnMap"]])) {
+      tmpSim[["burnMap"]]
+    } else {
+      stop("not sure which object is used for cumulative burn map")
     }
 
     ## sanity check
-    compareRaster(tmpSim[["rstCurrentBurnCumulative"]], tmpSim[["rstFlammable"]], res = TRUE, orig = TRUE)
+    terra::compareGeom(cumulBurnMap, tmpSim[["rstFlammable"]], res = TRUE)
 
     ## mean annual cumulative burn map
-    tmpSim[["rstCurrentBurnCumulative"]] / (end(tmpSim) - start(tmpSim))
+    cumulBurnMap / (end(tmpSim) - start(tmpSim))
   }) |>
-    raster::stack() |>
-    raster::calc(sum, na.rm = TRUE)
+    terra::rast() |>
+    terra::app(sum, na.rm = TRUE)
 
   meanAnnualCumulBurnMap <- burnMaps / length(allReps)
 
   firePolys <- Cache(
     prepInputs,
+    url = "https://cwfis.cfs.nrcan.gc.ca/downloads/nfdb/fire_poly/current_version/NFDB_poly.zip",
     fun = "sf::st_read",
+    destinationPath = inputPath(sim),
     targetFile = "NFDB_poly_20210707.shp" ## TODO: this shouldn't be needed; needs to be updated
   ) |>
     sf::st_cast("MULTIPOLYGON") |>
     sf::st_transform(crs(flammableMap))
 
   fireYears <- firePolys[firePolys$YEAR > 0, ][["YEAR"]] |> unique() |> sort()
-  meanAnnualCumulBurnMapHistoric <- fasterize::fasterize(firePolys, flammableMap, field = "YEAR", fun = "count")
+  meanAnnualCumulBurnMapHistoric <- terra::rasterize(firePolys, flammableMap, field = "YEAR", fun = "count")
   meanAnnualCumulBurnMapHistoric <- meanAnnualCumulBurnMapHistoric / length(fireYears)
 
-  nonFlammable <- which(is.na(flammableMap[]) | flammableMap[] == 0)
+  nonFlammable <- which(is.na(terra::values(flammableMap, mat = FALSE)) |
+                          terra::values(flammableMap, mat = FALSE) == 0)
   if (length(nonFlammable) > 0) {
     meanAnnualCumulBurnMap[nonFlammable] <- NA
     meanAnnualCumulBurnMapHistoric[nonFlammable] <- NA
@@ -175,17 +183,34 @@ Init <- function(sim) {
 }
 
 FireSummaries <- function(sim) {
-  studyArea <- P(sim)$.studyAreaName
+  allReps <- sprintf("rep%02d", P(sim)$reps)
+
+  studyAreaName <- P(sim)$.studyAreaName
   outputDir <- outputPath(sim)
 
-  sim$fireSizes <- lapply(P(sim)$reps, function(rep) {
-    fsim <- findSimFile(outputDir, rep)
+  sim$fireSizes <- lapply(allReps, function(rep) {
+    fsim <- file.path(outputPath(sim), rep,
+                      sprintf("%s_%04d.qs", P(sim)$simOutPrefix, P(sim)$simTimes[2]))
+    if (!file.exists(fsim)) {
+      fsim <- paste0(tools::file_path_sans_ext(fsim), ".rds") ## fallback to rds if qs not used
+    }
+
+    stopifnot(file.exists(fsim))
 
     tmpSim <- suppressMessages(loadSimList(fsim))
 
-    if (!is.null(tmpSim[["fireSizes"]])) {
+    if (!is.null(tmpSim[["burnSummary"]])) {
+      fs <- copy(tmpSim[["burnSummary"]])
+      fs[, `:=`(simArea = studyAreaName,
+                size = N, ## use number of pixels (N) instead of areaBurned
+                maxSize = NA_integer_, ## NOTE: no "target" or "expected" fire size w/ scfm nor fS
+                rep = as.integer(substr(rep, 4, 5)))]
+      set(fs, NULL, c("areaBurned", "igLoc", "grp", "PolyID"), NULL)
+      setcolorder(fs, c("simArea", "rep", "year", "size", "maxSize"))
+      setnames(fs, old = c("size", "maxSize"), new = c("simSize", "expSize"))
+    } else if (!is.null(tmpSim[["fireSizes"]])) {
       fs <- rbindlist(tmpSim[["fireSizes"]], idcol = "year")
-      fs[, `:=`(simArea = studyArea, rep = rep)]
+      fs[, `:=`(simArea = studyAreaName, rep = rep)]
       setcolorder(fs, c("simArea", "rep", "year", "size", "maxSize"))
       setnames(fs, old = c("size", "maxSize"), new = c("simSize", "expSize"))
     } else {
@@ -250,7 +275,7 @@ plotFun <- function(sim) {
   maxLogExpSizeHa <- max(subsetDT$logExpSizeHa)
   maxLogSimSizeHa <- max(subsetDT$logSimSizeHa)
 
-  breaks <- seq(1.0, ceiling(max(maxLogExpSizeHa, maxLogSimSizeHa) / 0.5) * 0.5, 0.5)
+  breaks <- seq(0.0, ceiling(max(maxLogExpSizeHa, maxLogSimSizeHa, na.rm = TRUE) / 0.5) * 0.5, 0.5)
 
   hexp <- hist(subsetDT$logExpSizeHa, breaks = breaks, plot = FALSE)
   hsim <- hist(subsetDT$logSimSizeHa, breaks = breaks, plot = FALSE)
@@ -333,17 +358,17 @@ plotFun <- function(sim) {
   }
 
   ## exp vs sim fire sizes
-ggExpVsSim <- ggplot(subsetDT, aes(x = expSizeHa, y = simSizeHa)) +
-  geom_smooth(method = lm) +
-  scale_x_continuous(limits = c(0, NA)) +
-  scale_y_continuous(limits = c(0, NA)) +
-  xlab("Expected fire size (ha)") +
-  ylab("Simulated fire size (ha)") +
-  ggtitle(paste("Expected vs. simulated fire sizes in", studyAreaName)) +
-  theme_bw() +
-  geom_abline(slope = 1, lty = "dotted")
+  ggExpVsSim <- ggplot(subsetDT, aes(x = expSizeHa, y = simSizeHa)) +
+    geom_smooth(method = lm) +
+    scale_x_continuous(limits = c(0, NA)) +
+    scale_y_continuous(limits = c(0, NA)) +
+    xlab("Expected fire size (ha)") +
+    ylab("Simulated fire size (ha)") +
+    ggtitle(paste("Expected vs. simulated fire sizes in", studyAreaName)) +
+    theme_bw() +
+    geom_abline(slope = 1, lty = "dotted")
 
-ggExpVsSimHex <- ggplot(subsetDT, aes(x = expSizeHa, y = simSizeHa)) +
+  ggExpVsSimHex <- ggplot(subsetDT, aes(x = expSizeHa, y = simSizeHa)) +
     geom_hex(bins = 50) +
     xlab("Expected fire size (ha)") +
     ylab("Simulated fire size (ha)") +
@@ -360,7 +385,7 @@ ggExpVsSimHex <- ggplot(subsetDT, aes(x = expSizeHa, y = simSizeHa)) +
     ggsave(filename = fggExpVsSimHex, plot = ggExpVsSimHex, height = 10, width = 10, type = "cairo")
   }
 
-  ## TODO: is it worth testing fire size distributions? (very slow... an the plot show they're bang-on)
+  ## TODO: is it worth testing fire size distributions? (very slow, and plots show they're bang-on)
   # kSamples::ad.test(subsetDT$simSize, subsetDT$expSize) ## TODO: output this somewhere...
 
   ##  track which plot files to upload
@@ -373,8 +398,7 @@ ggExpVsSimHex <- ggplot(subsetDT, aes(x = expSizeHa, y = simSizeHa)) +
 }
 
 .inputObjects <- function(sim) {
-  #cacheTags <- c(currentModule(sim), "function:.inputObjects") ## uncomment this if Cache is being used
-  dPath <- asPath(getOption("reproducible.destinationPath", dataPath(sim)), 1)
+  dPath <- asPath(inputPath(sim), 1)
   message(currentModule(sim), ": using dataPath '", dPath, "'.")
 
   # ! ----- EDIT BELOW ----- ! #
