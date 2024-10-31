@@ -124,6 +124,7 @@ Init <- function(sim) {
   pixelRes <- NULL
 
   burnMaps <- lapply(allReps, function(rep) {
+    message(paste("Loading burn maps for rep", rep, "..."))
     fsim <- findSimFile(outputPath(sim), rep)
 
     tmpSim <- suppressMessages(loadSimList(fsim))
