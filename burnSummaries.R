@@ -111,6 +111,7 @@ Init <- function(sim) {
   pixelRes <- NULL
 
   burnMaps <- lapply(allReps, function(rep) {
+    message(paste("Loading burn maps for rep", rep, "..."))
     fsim <- file.path(outputPath(sim), rep,
                       sprintf("%s_%04d.qs", P(sim)$simOutPrefix, P(sim)$simTimes[2]))
     if (!file.exists(fsim)) {
