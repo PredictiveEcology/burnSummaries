@@ -1,7 +1,7 @@
 ---
 title: "burnSummaries Manual"
 subtitle: "v.0.0.0.9000"
-date: "Last updated: 2023-09-04"
+date: "Last updated: 2024-03-06"
 output:
   bookdown::html_document2:
     toc: true
@@ -44,8 +44,8 @@ Describe input data required by the module and how to obtain it (e.g., directly 
 If `sourceURL` is specified, `downloadData("burnSummaries", "..")` may be sufficient.
 Table \@ref(tab:moduleInputs-burnSummaries) shows the full list of module inputs.
 
-<table class="table" style="margin-left: auto; margin-right: auto;">
-<caption>(\#tab:moduleInputs-burnSummaries)List of (ref:burnSummaries) input objects and their description.</caption>
+<table class="table" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>(\#tab:moduleInputs-burnSummaries)(\#tab:moduleInputs-burnSummaries)List of (ref:burnSummaries) input objects and their description.</caption>
  <thead>
   <tr>
    <th style="text-align:left;"> objectName </th>
@@ -56,9 +56,15 @@ Table \@ref(tab:moduleInputs-burnSummaries) shows the full list of module inputs
  </thead>
 <tbody>
   <tr>
+   <td style="text-align:left;"> speciesLayers </td>
+   <td style="text-align:left;"> RasterStack </td>
+   <td style="text-align:left;"> initial percent cover raster layers used for simulation. </td>
    <td style="text-align:left;"> NA </td>
-   <td style="text-align:left;"> NA </td>
-   <td style="text-align:left;"> NA </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> speciesLayers </td>
+   <td style="text-align:left;"> RasterStack </td>
+   <td style="text-align:left;"> initial percent cover raster layers used for simulation. </td>
    <td style="text-align:left;"> NA </td>
   </tr>
 </tbody>
@@ -67,8 +73,8 @@ Table \@ref(tab:moduleInputs-burnSummaries) shows the full list of module inputs
 Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnSummaries))
 
 
-<table class="table" style="margin-left: auto; margin-right: auto;">
-<caption>(\#tab:moduleParams-burnSummaries)List of (ref:burnSummaries) parameters and their description.</caption>
+<table class="table" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>(\#tab:moduleParams-burnSummaries)(\#tab:moduleParams-burnSummaries)List of (ref:burnSummaries) parameters and their description.</caption>
  <thead>
   <tr>
    <th style="text-align:left;"> paramName </th>
@@ -80,6 +86,38 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
   </tr>
  </thead>
 <tbody>
+  <tr>
+   <td style="text-align:left;"> reps </td>
+   <td style="text-align:left;"> integer </td>
+   <td style="text-align:left;"> 1, 2, 3,.... </td>
+   <td style="text-align:left;"> 1 </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> number of replicates/runs per study area. </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> simOutputPath </td>
+   <td style="text-align:left;"> character </td>
+   <td style="text-align:left;"> /tmp/Rtm.... </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> Directory specifying the location of the simulation outputs. </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> upload </td>
+   <td style="text-align:left;"> logical </td>
+   <td style="text-align:left;"> FALSE </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> if TRUE, uses the `googledrive` package to upload figures. </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> uploadTo </td>
+   <td style="text-align:left;"> character </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> if `upload = TRUE`, a Google Drive folder id corresponding to `.studyAreaName`. </td>
+  </tr>
   <tr>
    <td style="text-align:left;"> .plots </td>
    <td style="text-align:left;"> character </td>
@@ -163,8 +201,8 @@ Write what is saved.
 
 Description of the module outputs (Table \@ref(tab:moduleOutputs-burnSummaries)).
 
-<table class="table" style="margin-left: auto; margin-right: auto;">
-<caption>(\#tab:moduleOutputs-burnSummaries)List of (ref:burnSummaries) outputs and their description.</caption>
+<table class="table" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>(\#tab:moduleOutputs-burnSummaries)(\#tab:moduleOutputs-burnSummaries)List of (ref:burnSummaries) outputs and their description.</caption>
  <thead>
   <tr>
    <th style="text-align:left;"> objectName </th>
@@ -174,9 +212,9 @@ Description of the module outputs (Table \@ref(tab:moduleOutputs-burnSummaries))
  </thead>
 <tbody>
   <tr>
-   <td style="text-align:left;"> NA </td>
-   <td style="text-align:left;"> NA </td>
-   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> fireSizes </td>
+   <td style="text-align:left;"> data.table </td>
+   <td style="text-align:left;"> summary fire sizes table </td>
   </tr>
 </tbody>
 </table>
