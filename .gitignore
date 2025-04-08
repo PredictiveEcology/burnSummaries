@@ -5,4 +5,5 @@
 .DS_Store
 .quarto
 
+burnSummaries_cache/
 burnSummaries2.Rmd

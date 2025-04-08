@@ -2813,6 +2813,29 @@ if (window.hljs) {
 
 
 
+<style type="text/css">
+
+div.csl-bib-body { }
+div.csl-entry {
+clear: both;
+margin-bottom: 0em;
+}
+.hanging div.csl-entry {
+margin-left:2em;
+text-indent:-2em;
+}
+div.csl-left-margin {
+min-width:2em;
+float:left;
+}
+div.csl-right-inline {
+margin-left:2em;
+padding-left:1em;
+}
+div.csl-indent {
+margin-left: 2em;
+}
+</style>
 
 
 
@@ -2973,7 +2996,7 @@ border-radius: 0px;
 
 <h1 class="title toc-ignore">burnSummaries Manual</h1>
 <h3 class="subtitle">v.1.0.0</h3>
-<h4 class="date">Last updated: 2025-01-23</h4>
+<h4 class="date">Last updated: 2025-04-07</h4>
 
 </div>
 
@@ -2982,25 +3005,33 @@ border-radius: 0px;
 <h1>burnSummaries Module</h1>
 <!-- the following are text references used in captions for LaTeX compatibility -->
 
+
+<p><a href="ssh://git@github.com/PredictiveEcology/burnSummariesd0617cf79ffa92b19bf10118da9c5a864daf3638"><img role="img" aria-label="module-version-Badge" src="data:image/png;base64,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" alt="module-version-Badge" /></a></p>
+<p><a href="https://github.com/PredictiveEcology/burnSummaries/issues"><img role="img" aria-label="Issues-badge" src="data:image/png;base64,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" alt="Issues-badge" /></a></p>
 <div id="authors" class="section level4">
 <h4>Authors:</h4>
 <p>Alex M Chubaty <a href="mailto:achubaty@for-cast.ca" class="email">achubaty@for-cast.ca</a> [aut, cre] (<a href="https://orcid.org/0000-0001-7146-8135" class="uri">https://orcid.org/0000-0001-7146-8135</a>)
 <!-- ideally separate authors with new lines, '\n' not working --></p>
+<div class="rmdwarning">
+<p>This documentation is work in progress.
+Please report any discrepancies or omissions at <a href="https://github.com/PredictiveEcology/BC_HRV_preamble/issues" class="uri">https://github.com/PredictiveEcology/BC_HRV_preamble/issues</a>.</p>
+</div>
 </div>
 <div id="module-overview" class="section level2">
 <h2>Module Overview</h2>
 <div id="module-summary" class="section level3">
 <h3>Module summary</h3>
-<p>Provide a brief summary of what the module does / how to use the module.</p>
-<p>Module documentation should be written so that others can use your module.
-This is a template for module documentation, and should be changed to reflect your module.</p>
+<p>(TODO)</p>
+<ul>
+<li>LandMine <span class="citation">(<a href="#ref-Andison:1996">Andison 1996</a>)</span> - based on <span class="citation">(<a href="#ref-Clarke:1994">Clarke <em>et al.</em> 1994</a>)</span>;</li>
+<li>scfm <span class="citation">(<a href="#ref-Cumming:1998">Cumming <em>et al.</em> 1998</a>; <a href="#ref-Armstrong:2003">Armstrong &amp; Cumming 2003</a>)</span>;</li>
+<li>fireSense <span class="citation">(<a href="#ref-Marchal:2017a">Marchal <em>et al.</em> 2017b</a>, <a href="#ref-Marchal:2017b">a</a>; <a href="#ref-Marchal:2019">2019</a>)</span></li>
+</ul>
 </div>
 <div id="module-inputs-and-parameters" class="section level3">
 <h3>Module inputs and parameters</h3>
-<p>Describe input data required by the module and how to obtain it (e.g., directly from online sources or supplied by other modules)
-If <code>sourceURL</code> is specified, <code>downloadData(&quot;burnSummaries&quot;, &quot;..&quot;)</code> may be sufficient.
-Table <a href="#tab:moduleInputs-burnSummaries">1</a> shows the full list of module inputs.</p>
-<table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<p>Table <a href="#tab:moduleInputs-burnSummaries">1</a> shows the full list of module inputs.</p>
+<table class="table" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
 <caption>
 <span id="tab:moduleInputs-burnSummaries">Table 1: </span><span id="tab:moduleInputs-burnSummaries">Table 2: </span>List of <em>burnSummaries</em> input objects and their description.
 </caption>
@@ -3038,7 +3069,7 @@ NA
 </tbody>
 </table>
 <p>Provide a summary of user-visible parameters (Table <a href="#tab:moduleParams-burnSummaries">3</a>)</p>
-<table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<table class="table" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
 <caption>
 <span id="tab:moduleParams-burnSummaries">Table 3: </span><span id="tab:moduleParams-burnSummaries">Table 4: </span>List of <em>burnSummaries</em> parameters and their description.
 </caption>
@@ -3113,7 +3144,7 @@ simOutputPath
 character
 </td>
 <td style="text-align:left;">
-/tmp/Rtm….
+/var/fol….
 </td>
 <td style="text-align:left;">
 NA
@@ -3362,7 +3393,7 @@ Should caching of events or module be used?
 <div id="module-outputs" class="section level3">
 <h3>Module outputs</h3>
 <p>Description of the module outputs (Table <a href="#tab:moduleOutputs-burnSummaries">5</a>).</p>
-<table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<table class="table" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
 <caption>
 <span id="tab:moduleOutputs-burnSummaries">Table 5: </span><span id="tab:moduleOutputs-burnSummaries">Table 6: </span>List of <em>burnSummaries</em> outputs and their description.
 </caption>
@@ -3401,8 +3432,35 @@ summary fire sizes table
 <div id="getting-help" class="section level3">
 <h3>Getting help</h3>
 <ul>
-<li>provide a way for people to obtain help (e.g., module repository issues page)</li>
+<li><a href="https://github.com/PredictiveEcology/burnSummaries/issues" class="uri">https://github.com/PredictiveEcology/burnSummaries/issues</a></li>
 </ul>
+</div>
+<div id="references" class="section level3">
+<h3>References</h3>
+<!-- autogenerated -->
+<div id="refs" class="references csl-bib-body hanging-indent" entry-spacing="0">
+<div id="ref-Andison:1996" class="csl-entry">
+Andison, D.W. (1996). <a href="https://open.library.ubc.ca/cIRcle/collections/ubctheses/831/items/1.0075275">Managing for landscape patterns in the sub-boreal forests of <span>British</span> <span>Columbia</span></a>. {PhD} {Thesis}. University of British Columbia, Vancouver, BC.
+</div>
+<div id="ref-Armstrong:2003" class="csl-entry">
+Armstrong, G.W. &amp; Cumming, S.G. (2003). <a href="https://doi.org/10.1093/forestscience/49.5.719">Estimating the <span>Cost</span> of <span>Land</span> <span>Base</span> <span>Changes</span> <span>Due</span> to <span>Wildfire</span> <span>Using</span> <span>Shadow</span> <span>Prices</span></a>. <em>Forest Science</em>, 49, 719–730.
+</div>
+<div id="ref-Clarke:1994" class="csl-entry">
+Clarke, K.C., Brass, J.A. &amp; Riggan, P.J. (1994). <a href="https://www.ncbi.nlm.nih.gov/pubmed/563">A <span>Cellular</span>-<span>Automaton</span> <span>Model</span> of <span>Wildfire</span> <span>Propagation</span> and <span>Extinction</span></a>. <em>Photogrammetric Engineering and Remote Sensing</em>, 60, 1355–1367.
+</div>
+<div id="ref-Cumming:1998" class="csl-entry">
+Cumming, S.G., Demarchi, D. &amp; Walters, C. (1998). <em><a href="https://doi.org/10.7939/R35N33">A <span>Grid</span>-<span>Based</span> <span>Spatial</span> <span>Model</span> of <span>Forest</span> <span>Dynamics</span> <span>Applied</span> to the <span>Boreal</span> <span>Mixedwood</span> <span>Region</span></a></em> (Working {Paper} No. 1998-8). Sustainable Forest Management Network.
+</div>
+<div id="ref-Marchal:2017b" class="csl-entry">
+Marchal, J., Cumming, S.G. &amp; McIntire, E.J.B. (2017a). <a href="https://doi.org/10.1111/ecog.01849">Exploiting <span>Poisson</span> additivity to predict fire frequency from maps of fire weather and land cover in boreal forests of <span>Québec</span>, <span>Canada</span></a>. <em>Ecography</em>, 40, 200–209.
+</div>
+<div id="ref-Marchal:2017a" class="csl-entry">
+Marchal, J., Cumming, S.G. &amp; McIntire, E.J.B. (2017b). <a href="https://doi.org/10.1371/journal.pone.0179294">Land cover, more than monthly fire weather, drives fire-size distribution in <span>Southern</span> <span>Québec</span> forests: <span>Implications</span> for fire risk management</a>. <em>PLoS ONE</em>, 12, 1–17.
+</div>
+<div id="ref-Marchal:2019" class="csl-entry">
+Marchal, J., Cumming, S.G. &amp; McIntire, E.J.B. (2019). <a href="https://doi.org/10.1007/s10021-019-00398-2">Turning <span>Down</span> the <span>Heat</span>: <span>Vegetation</span> <span>Feedbacks</span> <span>Limit</span> <span>Fire</span> <span>Regime</span> <span>Responses</span> to <span>Global</span> <span>Warming</span></a>. <em>Ecosystems</em>.
+</div>
+</div>
 </div>
 </div>
 </div>
@@ -3456,7 +3514,7 @@ $(document).ready(function ()  {
 
     // establish options
     var options = {
-      selectors: "h1,h2,h3",
+      selectors: "h1,h2,h3,h4",
       theme: "bootstrap3",
       context: '.toc-content',
       hashGenerator: function (text) {
