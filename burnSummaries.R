@@ -87,9 +87,11 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
 
       if (P(sim)$mode == "single") {
         sim <- InitSingle(sim)
-        sim <- scheduleEvent(sim, start(sim), "burnSummaries", "declare_outputs", .first())
+
         sim <- scheduleEvent(sim, start(sim), "burnSummaries", "update_tsf")
         sim <- scheduleEvent(sim, end(sim), "burnSummaries", "create_fireSizes", .last())
+
+        sim <- scheduleEvent(sim, start(sim), "burnSummaries", "save_single", .last())
       } else if (P(sim)$mode == "multi") {
         sim <- InitMulti(sim)
 
@@ -97,49 +99,6 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
         sim <- scheduleEvent(sim, start(sim), "burnSummaries", "summary")
         sim <- scheduleEvent(sim, start(sim), "burnSummaries", "plot")
       }
-    },
-    declare_outputs = {
-      ## objects to save during simulation --------------------------------------------------------
-      times_during <- c(start(sim), end(sim), mod$analysesOutputsTimes) |> unique() |> sort()
-
-      objs2save_during <- c(
-        "rstTimeSinceFire" ## SpatRaster (.tif);
-      )
-
-      outputs_during <- data.frame(
-        expand.grid(objectName = objs2save_during, saveTime = times_during),
-        fun = "writeRaster",
-        package = "terra",
-        file = paste0(objs2save_during, ".tif"),
-        stringsAsFactors = FALSE
-      )
-      outputs_during$arguments <- I(list(
-        ## fmt: skip
-        list(overwrite = TRUE, progress = FALSE, datatype = "INT2U")
-      ))
-
-      times_during <- c(start(sim), end(sim), mod$analysesOutputsTimes) |> unique() |> sort()
-
-      ## objects to save at end of simulation -----------------------------------------------------
-      objs2save_end <- c(
-        "burnMap", ## SpatRaster (.tif);
-        "flammableMap" ## SpatRaster (.tif);
-      )
-
-      outputs_end <- data.frame(
-        expand.grid(objectName = objs2save_end, saveTime = end(sim)),
-        fun = rep("writeRaster", length(objs2save_end)),
-        package = rep("terra", length(objs2save_end)),
-        file = paste0(objs2save_end, ".tif"),
-        stringsAsFactors = FALSE
-      )
-      outputs_end$arguments <- I(list(
-        ## fmt: skip
-        list(overwrite = TRUE, progress = FALSE, datatype = "INT2U"),
-        list(overwrite = TRUE, progress = FALSE, datatype = "INT2U")
-      ))
-
-      outputs(sim) <- rbind(outputs_during, outputs_end)
     },
     update_tsf = {
       sim$rstTimeSinceFire[] <- as.integer(sim$rstTimeSinceFire[]) + as.integer(P(sim)$fireTimestep) ## preserves NAs
@@ -190,6 +149,38 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
     plot = {
       plotFun(sim)
     },
+    save_single = {
+      padYear <- paddedFloatToChar(time(sim), padL = ceiling(log10(end(sim) + 1)))
+
+      ## objects to save during simulation --------------------------------------------------------
+      times_during <- c(start(sim), end(sim), mod$analysesOutputsTimes) |> unique() |> sort()
+
+      ## fmt: skip
+      if (time(sim) %in% times_during) {
+        f_cohortData <- file.path(outputPath(sim), paste0("cohortData_year", padYear, ".qs2"))
+        qs2::qs_save(sim$cohortData, f_cohortData)
+        sim <- registerOutputs(f_cohortData, sim)
+
+        f_rstTimeSinceFire <- file.path(outputPath(sim), paste0("rstTimeSinceFire_year", padYear, ".tif"))
+        terra::writeRaster(sim$rstTimeSinceFire, f_rstTimeSinceFire, datatype = "INT2U", overwrite = TRUE)
+        sim <- registerOutputs(f_rstTimeSinceFire, sim)
+
+        if (time(sim) >= P(sim)$summaryPeriod[1] && time(sim) < P(sim)$summaryPeriod[2]) {
+          sim <- scheduleEvent(sim, time(sim) + P(sim)$summaryInterval, "burnSummaries", "save_single", .last())
+        }
+      }
+
+      ## objects to save at end of simulation -----------------------------------------------------
+      if (time(sim) == end(sim)) {
+        f_burnMap <- file.path(outputPath(sim), paste0("burnMap_year", padYear, ".tif"))
+        terra::writeRaster(sim$burnMap, f_burnMap, datatype = "INT2U", overwrite = TRUE)
+        sim <- registerOutputs(f_burnMap, sim)
+
+        f_flammableMap <- file.path(outputPath(sim), paste0("flammableMap_year", padYear, ".tif"))
+        terra::writeRaster(sim$flammableMap, f_flammableMap, datatype = "INT2U", overwrite = TRUE)
+        sim <- registerOutputs(f_flammableMap, sim)
+      }
+    },
     ## fmt: skip
     warning(paste(
       "Undefined event type: \'", current(sim)[1, "eventType", with = FALSE],
@@ -221,11 +212,11 @@ InitMulti <- function(sim) {
   allReps <- sprintf("rep%02d", P(sim)$reps)
   flammableMap <- NULL
   pixelSize <- NULL
-
+  browser()
   burnMaps <- lapply(allReps, function(rep) {
     message(paste("Loading burn maps for rep", rep, "..."))
-    fbm <- file.path(outputPath(sim), rep, glue::glue("burnMap_{P(sim)$simTimes[2]}.tif")) ## TODO: confirm
-    flm <- file.path(outputPath(sim), rep, glue::glue("flammableMap_{P(sim)$simTimes[2]}.tif")) ## TODO: confirm
+    fbm <- file.path(outputPath(sim), rep, glue::glue("burnMap_{P(sim)$simTimes[2]}.tif"))
+    flm <- file.path(outputPath(sim), rep, glue::glue("flammableMap_{P(sim)$simTimes[1]}.tif")) ## TODO: confirm
 
     stopifnot(file.exists(fbm), file.exists(flm))
 
