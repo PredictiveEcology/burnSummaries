@@ -218,7 +218,7 @@ InitMulti <- function(sim) {
   stopifnot(file.exists(flm))
 
   flammableMap <- terra::rast(flm)
-  pixelSize <- terra::res(flammableMap) |> unique()
+  pixelSize <- terra::res(flammableMap) ## keep both x and y dimensions
 
   burnMaps <- lapply(allReps, function(rep) {
     message(paste("Loading burn maps for rep", rep, "..."))
@@ -276,43 +276,27 @@ InitMulti <- function(sim) {
 }
 
 FireSummaries <- function(sim) {
-  browser()
   allReps <- sprintf("rep%02d", P(sim)$reps)
+  padL <- ceiling(log10(P(sim)$simTimes[2] + 1))
+  padYearStart <- paddedFloatToChar(P(sim)$simTimes[1], padL = padL)
+  padYearEnd <- paddedFloatToChar(P(sim)$simTimes[2], padL = padL)
 
   studyAreaName <- P(sim)$.studyAreaName
-  outputDir <- outputPath(sim)
 
   sim$fireSizes <- lapply(allReps, function(rep) {
-    f_burnSummary <- file.path(outputPath(sim), rep, "burnSummary.qs2")
-    f_fireSizes <- file.path(outputPath(sim), rep, "fireSizes.qs2")
+    f_fireSizes <- file.path(outputPath(sim), rep, "burnSummaries_fireSizes.csv")
 
-    if (file.exists(f_burnSummary)) {
-      fs <- qs2::qs_read(f_burnSummary)
-      fs[, `:=`(
-        simArea = studyAreaName,
-        size = N, ## use number of pixels (N) instead of areaBurned
-        maxSize = NA_integer_, ## NOTE: no "target" or "expected" fire size w/ scfm nor fS
-        rep = as.integer(substr(rep, 4, 5))
-      )]
-      set(fs, NULL, c("areaBurned", "igLoc", "grp", "PolyID"), NULL)
-      setcolorder(fs, c("simArea", "rep", "year", "size", "maxSize"))
-      setnames(fs, old = c("size", "maxSize"), new = c("simSize", "expSize"))
-    } else if (file.exists(f_fireSizes)) {
-      fs <- qs2::qs_read(f_fireSizes) |> rbindlist(tmpSim[["fireSizes"]], idcol = "year")
-      fs[, `:=`(simArea = studyAreaName, rep = rep)]
-      setcolorder(fs, c("simArea", "rep", "year", "size", "maxSize"))
-      setnames(fs, old = c("size", "maxSize"), new = c("simSize", "expSize"))
-    } else {
-      NULL
-    }
+    stopifnot(file.exists(f_fireSizes))
+
+    data.table::fread(f_fireSizes)
   }) |>
     rbindlist()
 
-  f <- file.path(outputDir, paste0("burnSummaries_fireSizes.csv"))
-  fwrite(sim$fireSizes, f)
+  f_out <- file.path(outputPath(sim), paste0("burnSummaries_fireSizes_allReps.csv"))
+  fwrite(sim$fireSizes, f_out)
 
   ## TODO: add this file to list of outputs
-  # registerOutputs(f, sim)
+  sim <- registerOutputs(f_out, sim)
 
   return(invisible(sim))
 }
@@ -321,12 +305,13 @@ FireSummaries <- function(sim) {
 plotFun <- function(sim) {
   # ! ----- EDIT BELOW ----- ! #
   studyAreaName <- P(sim)$.studyAreaName
-  pixelSizeHa <- prod(mod$pixelSize) / 10^4
-  browser() ## TODO: use tidyterra/ggplot2 instead of rasterVis
+
   ## cumulative burn maps
+  use_palette = "muted" # "bl_yl_rd"
+
   ggCumulBurnMapExp <- ggplot() +
-    tidyterra::geom_spatraster(mod$meanAnnualCumulBurnMapHistoric, legend = TRUE) +
-    tidyterra::scale_fill_grass_c(palette = "gyr") +
+    tidyterra::geom_spatraster(data = mod$meanAnnualCumulBurnMapHistoric) +
+    tidyterra::scale_fill_whitebox_c(palette = use_palette) +
     theme_bw() +
     ggspatial::annotation_north_arrow(
       location = "bl",
@@ -340,8 +325,8 @@ plotFun <- function(sim) {
     ggtitle(paste("Historic mean annual cumulative burn map for", studyAreaName))
 
   ggCumulBurnMapSim <- ggplot() +
-    tidyterra::geom_spatraster(mod$meanAnnualCumulBurnMap) +
-    tidyterra::scale_fill_grass_c(palette = "gyr") +
+    tidyterra::geom_spatraster(data = mod$meanAnnualCumulBurnMap) +
+    tidyterra::scale_fill_whitebox_c(palette = use_palette) +
     theme_bw() +
     ggspatial::annotation_north_arrow(
       location = "bl",
@@ -362,15 +347,21 @@ plotFun <- function(sim) {
   }
 
   ## fire size histograms w/ median fire sizes
+  pixelSizeHa <- prod(mod$pixelSize) / 10^4
+
   subsetDT <- sim$fireSizes[simArea == studyAreaName & (expSize > 0 | simSize > 0), ]
 
-  subsetDT[, expSizeHa := expSize * pixelSizeHa]
+  ## scfm and fireSense don't set target fire sizes, but LandMine does
+  fireModelUsesTargetSize <- isFALSE(all(is.na(subsetDT$expSize)))
+
+  if (isTRUE(fireModelUsesTargetSize)) {
+    subsetDT[, expSizeHa := expSize * pixelSizeHa]
+    subsetDT[, logExpSize := log(expSize)]
+    subsetDT[, logExpSizeHa := log(expSize * pixelSizeHa)]
+  }
+
   subsetDT[, simSizeHa := simSize * pixelSizeHa]
-
-  subsetDT[, logExpSize := log(expSize)]
   subsetDT[, logSimSize := log(simSize)]
-
-  subsetDT[, logExpSizeHa := log(expSize * pixelSizeHa)]
   subsetDT[, logSimSizeHa := log(simSize * pixelSizeHa)]
 
   ## per Dave's original email:
@@ -378,36 +369,37 @@ plotFun <- function(sim) {
   ## > and the area of disturbances on a second y-axis graph.
   ## Per Eliot: x-axis uses same bins as histogram, with y-axis of median area burned per bin
 
-  maxLogExpSizeHa <- max(subsetDT$logExpSizeHa)
-  maxLogSimSizeHa <- max(subsetDT$logSimSizeHa)
+  if (isTRUE(fireModelUsesTargetSize)) {
+    maxLogExpSizeHa <- max(subsetDT$logExpSizeHa, na.rm = TRUE)
+    ## fmt: skip
+    breaks <- seq(0.0, ceiling(max(maxLogExpSizeHa, maxLogSimSizeHa, na.rm = TRUE) / 0.5) * 0.5, 0.5)
+    hexp <- hist(subsetDT$logExpSizeHa, breaks = breaks, plot = FALSE)
+    countsExp <- hexp$counts
+    subsetDT[, binIDexp := cut(logExpSizeHa, hexp$breaks)]
+    ## fmt: skip
+    summaryExpDT <- subsetDT[ , lapply(.SD, stats::median, na.rm = TRUE), by = binIDexp, .SDcols = "expSizeHa"]
+    setnames(summaryExpDT, "expSizeHa", "medExpSizeHa")
+    summaryExpDT <- summaryExpDT[, medLogExpSizeHa := log(medExpSizeHa)]
 
-  breaks <- seq(0.0, ceiling(max(maxLogExpSizeHa, maxLogSimSizeHa, na.rm = TRUE) / 0.5) * 0.5, 0.5)
+    midsExp <- cbind(
+      as.numeric(sub("\\((.+),.*", "\\1", summaryExpDT$binIDexp)),
+      as.numeric(sub("[^,]*,([^]]*)\\]", "\\1", summaryExpDT$binIDexp))
+    ) |>
+      rowMeans()
+    summaryExpDT <- summaryExpDT[, midsExp := midsExp]
+    scaleFactorExp <- max(countsExp) / maxLogExpSizeHa
+  }
 
-  hexp <- hist(subsetDT$logExpSizeHa, breaks = breaks, plot = FALSE)
+  maxLogSimSizeHa <- max(subsetDT$logSimSizeHa, na.rm = TRUE)
+
+  breaks <- seq(0.0, ceiling(max(maxLogSimSizeHa, na.rm = TRUE) / 0.5) * 0.5, 0.5)
   hsim <- hist(subsetDT$logSimSizeHa, breaks = breaks, plot = FALSE)
-
-  countsExp <- hexp$counts
   countsSim <- hsim$counts
-
-  subsetDT[, binIDexp := cut(logExpSizeHa, hexp$breaks)]
   subsetDT[, binIDsim := cut(logSimSizeHa, hsim$breaks)]
-
-  ## fmt: skip
-  summaryExpDT <- subsetDT[, lapply(.SD, stats::median, na.rm = TRUE), by = binIDexp, .SDcols = "expSizeHa" ]
   ## fmt: skip
   summarySimDT <- subsetDT[, lapply(.SD, stats::median, na.rm = TRUE), by = binIDsim, .SDcols = "simSizeHa"]
-  setnames(summaryExpDT, "expSizeHa", "medExpSizeHa")
   setnames(summarySimDT, "simSizeHa", "medSimSizeHa")
-
-  summaryExpDT <- summaryExpDT[, medLogExpSizeHa := log(medExpSizeHa)]
   summarySimDT <- summarySimDT[, medLogSimSizeHa := log(medSimSizeHa)]
-
-  midsExp <- cbind(
-    as.numeric(sub("\\((.+),.*", "\\1", summaryExpDT$binIDexp)),
-    as.numeric(sub("[^,]*,([^]]*)\\]", "\\1", summaryExpDT$binIDexp))
-  ) |>
-    rowMeans()
-  summaryExpDT <- summaryExpDT[, midsExp := midsExp]
 
   midsSim <- cbind(
     as.numeric(sub("\\((.+),.*", "\\1", summarySimDT$binIDsim)),
@@ -415,8 +407,6 @@ plotFun <- function(sim) {
   ) |>
     rowMeans()
   summarySimDT <- summarySimDT[, midsSim := midsSim]
-
-  scaleFactorExp <- max(countsExp) / maxLogExpSizeHa
   scaleFactorSim <- max(countsSim) / maxLogSimSizeHa
 
   y1col <- "grey20"
@@ -425,26 +415,28 @@ plotFun <- function(sim) {
   y2lab <- "Median log[fireSize] (ha)"
   x_lab <- "log[fireSize] (ha)"
 
-  ggHistExp <- ggplot(subsetDT, aes(x = logExpSizeHa)) +
-    geom_histogram(breaks = breaks, alpha = 0.5, fill = y1col) +
-    stat_summary_bin(
-      data = summaryExpDT,
-      mapping = aes(x = midsExp, y = medLogExpSizeHa * scaleFactorExp),
-      fun = "identity",
-      geom = "point",
-      breaks = breaks,
-      col = y2col
-    ) +
-    scale_y_continuous(y1lab, sec.axis = sec_axis(~ . / scaleFactorExp, name = y2lab)) +
-    xlab(x_lab) +
-    ggtitle(paste("Total expected number and size of fires in", studyAreaName)) +
-    theme_bw() +
-    theme(
-      axis.title.y.left = element_text(color = y1col),
-      axis.text.y.left = element_text(color = y1col),
-      axis.title.y.right = element_text(color = y2col),
-      axis.text.y.right = element_text(color = y2col)
-    )
+  if (isTRUE(fireModelUsesTargetSize)) {
+    ggHistExp <- ggplot(subsetDT, aes(x = logExpSizeHa)) +
+      geom_histogram(breaks = breaks, alpha = 0.5, fill = y1col) +
+      stat_summary_bin(
+        data = summaryExpDT,
+        mapping = aes(x = midsExp, y = medLogExpSizeHa * scaleFactorExp),
+        fun = "identity",
+        geom = "point",
+        breaks = breaks,
+        col = y2col
+      ) +
+      scale_y_continuous(y1lab, sec.axis = sec_axis(~ . / scaleFactorExp, name = y2lab)) +
+      xlab(x_lab) +
+      ggtitle(paste("Total expected number and size of fires in", studyAreaName)) +
+      theme_bw() +
+      theme(
+        axis.title.y.left = element_text(color = y1col),
+        axis.text.y.left = element_text(color = y1col),
+        axis.title.y.right = element_text(color = y2col),
+        axis.text.y.right = element_text(color = y2col)
+      )
+  }
 
   ggHistSim <- ggplot(subsetDT, aes(x = logSimSizeHa)) +
     geom_histogram(breaks = breaks, alpha = 0.5, fill = y1col) +
@@ -468,43 +460,53 @@ plotFun <- function(sim) {
     )
 
   if ("png" %in% P(sim)$.plots) {
-    fggHistExp <- file.path(figurePath(sim), "expected_number_size_fires.png")
-    ggsave(fggHistExp, ggHistExp, height = 10, width = 10, type = "cairo")
-    sim <- registerOutputs(fggHistExp, sim)
+    if (isTRUE(fireModelUsesTargetSize)) {
+      fggHistExp <- file.path(figurePath(sim), "expected_number_size_fires.png")
+      ggsave(fggHistExp, ggHistExp, height = 10, width = 10, type = "cairo")
+      sim <- registerOutputs(fggHistExp, sim)
+    }
 
     fggHistSim <- file.path(figurePath(sim), "simulated_number_size_fires.png")
     ggsave(fggHistSim, ggHistSim, height = 10, width = 10, type = "cairo")
     sim <- registerOutputs(fggHistSim, sim)
   }
 
-  ## exp vs sim fire sizes
-  ggExpVsSim <- ggplot(subsetDT, aes(x = expSizeHa, y = simSizeHa)) +
-    geom_smooth(method = lm) +
-    scale_x_continuous(limits = c(0, NA)) +
-    scale_y_continuous(limits = c(0, NA)) +
-    xlab("Expected fire size (ha)") +
-    ylab("Simulated fire size (ha)") +
-    ggtitle(paste("Expected vs. simulated fire sizes in", studyAreaName)) +
-    theme_bw() +
-    geom_abline(slope = 1, lty = "dotted")
+  if (isTRUE(fireModelUsesTargetSize)) {
+    ## exp vs sim fire sizes
+    ggExpVsSim <- ggplot(subsetDT, aes(x = expSizeHa, y = simSizeHa)) +
+      geom_smooth(method = lm) +
+      scale_x_continuous(limits = c(0, NA)) +
+      scale_y_continuous(limits = c(0, NA)) +
+      xlab("Expected fire size (ha)") +
+      ylab("Simulated fire size (ha)") +
+      ggtitle(paste("Expected vs. simulated fire sizes in", studyAreaName)) +
+      theme_bw() +
+      geom_abline(slope = 1, lty = "dotted")
 
-  ggExpVsSimHex <- ggplot(subsetDT, aes(x = expSizeHa, y = simSizeHa)) +
-    geom_hex(bins = 50) +
-    xlab("Expected fire size (ha)") +
-    ylab("Simulated fire size (ha)") +
-    ggtitle(paste("Expected vs. simulated fire sizes in", studyAreaName)) +
-    theme_bw() +
-    geom_abline(slope = 1, lty = "dotted")
+    ggExpVsSimHex <- ggplot(subsetDT, aes(x = expSizeHa, y = simSizeHa)) +
+      geom_hex(bins = 50) +
+      xlab("Expected fire size (ha)") +
+      ylab("Simulated fire size (ha)") +
+      ggtitle(paste("Expected vs. simulated fire sizes in", studyAreaName)) +
+      theme_bw() +
+      geom_abline(slope = 1, lty = "dotted")
 
-  if ("png" %in% P(sim)$.plots) {
-    ## NOTE: keep 1:1 aspect ratio on these plots
-    fggExpVsSim <- file.path(figurePath(sim), "exp_vs_sim_fire_sizes.png")
-    ggsave(filename = fggExpVsSim, plot = ggExpVsSim, height = 10, width = 10, type = "cairo")
-    sim <- registerOutputs(fggExpVsSim, sim)
+    if ("png" %in% P(sim)$.plots) {
+      ## NOTE: keep 1:1 aspect ratio on these plots
+      fggExpVsSim <- file.path(figurePath(sim), "exp_vs_sim_fire_sizes.png")
+      ggsave(filename = fggExpVsSim, plot = ggExpVsSim, height = 10, width = 10, type = "cairo")
+      sim <- registerOutputs(fggExpVsSim, sim)
 
-    fggExpVsSimHex <- file.path(figurePath(sim), "exp_vs_sim_fire_sizes_hex.png")
-    ggsave(filename = fggExpVsSimHex, plot = ggExpVsSimHex, height = 10, width = 10, type = "cairo")
-    sim <- registerOutputs(fggExpVsSimHex, sim)
+      fggExpVsSimHex <- file.path(figurePath(sim), "exp_vs_sim_fire_sizes_hex.png")
+      ggsave(
+        filename = fggExpVsSimHex,
+        plot = ggExpVsSimHex,
+        height = 10,
+        width = 10,
+        type = "cairo"
+      )
+      sim <- registerOutputs(fggExpVsSimHex, sim)
+    }
   }
 
   ## TODO: is it worth testing fire size distributions? (very slow, and plots show they're bang-on)
