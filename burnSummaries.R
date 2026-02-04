@@ -92,6 +92,8 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
         sim <- scheduleEvent(sim, end(sim), "burnSummaries", "create_fireSizes", .last())
 
         sim <- scheduleEvent(sim, start(sim), "burnSummaries", "save_single", .last())
+        sim <- scheduleEvent(sim, P(sim)$summaryPeriod[1], "burnSummaries", "save_single", .last())
+        sim <- scheduleEvent(sim, end(sim), "burnSummaries", "save_single", .last())
       } else if (P(sim)$mode == "multi") {
         sim <- InitMulti(sim)
 
@@ -157,10 +159,6 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
 
       ## fmt: skip
       if (time(sim) %in% times_during) {
-        f_cohortData <- file.path(outputPath(sim), paste0("cohortData_year", padYear, ".qs2"))
-        qs2::qs_save(sim$cohortData, f_cohortData)
-        sim <- registerOutputs(f_cohortData, sim)
-
         f_rstTimeSinceFire <- file.path(outputPath(sim), paste0("rstTimeSinceFire_year", padYear, ".tif"))
         terra::writeRaster(sim$rstTimeSinceFire, f_rstTimeSinceFire, datatype = "INT2U", overwrite = TRUE)
         sim <- registerOutputs(f_rstTimeSinceFire, sim)
@@ -210,21 +208,23 @@ InitSingle <- function(sim) {
 InitMulti <- function(sim) {
   ## check for necessary output files -----------------------------------------------
   allReps <- sprintf("rep%02d", P(sim)$reps)
-  flammableMap <- NULL
-  pixelSize <- NULL
-  browser()
+  padL <- ceiling(log10(P(sim)$simTimes[2] + 1))
+  padYearStart <- paddedFloatToChar(P(sim)$simTimes[1], padL = padL)
+  padYearEnd <- paddedFloatToChar(P(sim)$simTimes[2], padL = padL)
+
+  ## all reps have same flammable map
+  flm <- file.path(outputPath(sim), allReps[1], paste0("flammableMap_year", padYearEnd, ".tif"))
+
+  stopifnot(file.exists(flm))
+
+  flammableMap <- terra::rast(flm)
+  pixelSize <- terra::res(flammableMap) |> unique()
+
   burnMaps <- lapply(allReps, function(rep) {
     message(paste("Loading burn maps for rep", rep, "..."))
-    fbm <- file.path(outputPath(sim), rep, glue::glue("burnMap_{P(sim)$simTimes[2]}.tif"))
-    flm <- file.path(outputPath(sim), rep, glue::glue("flammableMap_{P(sim)$simTimes[1]}.tif")) ## TODO: confirm
+    fbm <- file.path(outputPath(sim), rep, paste0("burnMap_year", padYearEnd, ".tif"))
 
-    stopifnot(file.exists(fbm), file.exists(flm))
-
-    if (rep == allReps[1]) {
-      ## all reps have same flammable map
-      flammableMap <<- terra::rast(flm)
-      pixelSize <<- terra::res(flammableMap)
-    }
+    stopifnot(file.exists(fbm))
 
     cumulBurnMap <- terra::rast(fbm)
 
@@ -247,7 +247,7 @@ InitMulti <- function(sim) {
     reproducible::Cache() |>
     terra::project(flammableMap)
 
-  fireYears <- firePolys[firePolys$YEAR > 0, ][["YEAR"]] |> unique() |> sort()
+  fireYears <- tidyterra::filter(firePolys, YEAR > 0) |> dplyr::pull("YEAR") |> unique() |> sort()
   meanAnnualCumulBurnMapHistoric <- terra::rasterize(
     firePolys,
     flammableMap,
