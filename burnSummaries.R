@@ -62,11 +62,19 @@ defineModule(sim, list(
                  desc = paste("Fire sizes summary tables from LandMine.",
                               "One of `burnSummary` or `fireSizes` is required in single mode.")),
     expectsInput("flammableMap", "SpatRaster",
-                 desc = paste("Binary flammability map.", "Required in single mode.")),
+                 desc = paste("Binary flammability map.",
+                              "One of `flammableMap` or `flammableRTM` is requried in single mode.")),
+    expectsInput("flammableRTM", "SpatRaster",
+                 desc = paste("Binary flammability map.",
+                              "One of `flammableMap` or `flammableRTM` is requried in single mode.")),
+    expectsInput("nonForest_timeSinceDisturbance",  "SpatRaster",
+                 desc = paste("map of time since last burn, with non-flammable pixels receiving `NA`.",
+                              "One of `rstTimeSinceFire` or `nonForest_timeSinceDisturbance` is required in single mode.")),
     expectsInput("rstCurrentBurn", "SpatRaster",
                  desc = "Binary raster of fires, 1 meaning 'burned', 0 or NA is non-burned"),
     expectsInput("rstTimeSinceFire", "SpatRaster",
-                 desc = "map of time since last burn, with non-flammable pixels receiving `NA`.")
+                 desc = paste("map of time since last burn, with non-flammable pixels receiving `NA`.",
+                              "One of `rstTimeSinceFire` or `nonForest_timeSinceDisturbance` is required in single mode.")),
   ),
   outputObjects = bindrows(
     createsOutput("fireSizes", "data.table", 
@@ -523,20 +531,32 @@ plotFun <- function(sim) {
   ## NOTE: fireSize table can be derived from 'burnSummary' or 'fireSize' objects,
   ## so don't implement a hard requirement for either here.
   if (P(sim)$mode == "single") {
-    stopifnot(suppliedElsewhere("burnMap", sim), suppliedElsewhere("flammableMap", sim))
+    stopifnot(suppliedElsewhere("burnMap", sim))
+
+    if (!suppliedElsewhere("flammableMap", sim)) {
+      ## fireSense uses `flammableRTM`
+      stopifnot(suppliedElsewhere("flammableRTM", sim))
+
+      sim$flammableMap <- sim$flammableRTM
+    }
 
     if (!suppliedElsewhere("rstTimeSinceFire", sim)) {
-      sim$rstTimeSinceFire <- LandR::prepInputsStandAgeMap(
-        dataSource = "SCANFI",
-        dataYear = P(sim)$dataYear,
-        ageFun = "terra::rast",
-        cropTo = sim$flammableMap,
-        maskTo = sim$flammableMap,
-        destinationPath = outputPath(sim)
-      )
+      ## fireSense uses `nonForest_timeSinceDisturbance`
+      if (suppliedElsewhere("nonForest_timeSinceDisturbance", sim)) {
+        sim$rstTimeSinceFire <- sim$nonForest_timeSinceDisturbance
+      } else {
+        sim$rstTimeSinceFire <- LandR::prepInputsStandAgeMap(
+          dataSource = "SCANFI",
+          dataYear = P(sim)$dataYear,
+          ageFun = "terra::rast",
+          cropTo = sim$flammableMap,
+          maskTo = sim$flammableMap,
+          destinationPath = outputPath(sim)
+        )
 
-      sim$rstTimeSinceFire[sim$flammableMap[] == 0L] <- NA ## non-flammable areas are permanent
-      sim$rstTimeSinceFire[] <- as.integer(sim$rstTimeSinceFire[])
+        sim$rstTimeSinceFire[sim$flammableMap[] == 0L] <- NA ## non-flammable areas are permanent
+        sim$rstTimeSinceFire[] <- as.integer(sim$rstTimeSinceFire[])
+      }
     }
   } else if (P(sim)$mode == "multi") {
     stopifnot(suppliedElsewhere("reportingPolygons", sim))
