@@ -199,6 +199,35 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
 ## event functions ------------------------------------------------------------------
 
 InitSingle <- function(sim) {
+  if (is.null(sim[["flammableMap"]])) {
+    stopifnot(suppliedElsewhere("flammableRTM", sim))
+    # if (!is.null(sim[["flammableRTM"]]))
+    sim <- objectSynonyms(sim, list(c("flammableRTM", "flammableMap")))
+    ## fireSense uses `flammableRTM`
+    
+    # sim$flammableMap <- sim$flammableRTM
+  }
+  
+  
+  if (is.null(sim$rstTimeSinceFire)) {
+    ## fireSense uses `nonForest_timeSinceDisturbance`
+    if (!is.null(sim$nonForest_timeSinceDisturbance)) {
+      sim$rstTimeSinceFire <- sim$nonForest_timeSinceDisturbance
+    } else {
+      sim$rstTimeSinceFire <- LandR::prepInputsStandAgeMap(
+        dataSource = "SCANFI",
+        dataYear = P(sim)$dataYear,
+        ageFun = "terra::rast",
+        cropTo = sim$flammableMap,
+        maskTo = sim$flammableMap,
+        destinationPath = outputPath(sim)
+      )
+      
+      sim$rstTimeSinceFire[sim$flammableMap[] == 0L] <- NA ## non-flammable areas are permanent
+      sim$rstTimeSinceFire[] <- as.integer(sim$rstTimeSinceFire[])
+    }
+  }
+  
   ## sanity check
   terra::compareGeom(
     sim$rstCurrentBurn,
@@ -533,31 +562,24 @@ plotFun <- function(sim) {
   if (P(sim)$mode == "single") {
     stopifnot(suppliedElsewhere("burnMap", sim))
 
-    if (!suppliedElsewhere("flammableMap", sim)) {
-      ## fireSense uses `flammableRTM`
-      stopifnot(suppliedElsewhere("flammableRTM", sim))
-
-      sim$flammableMap <- sim$flammableRTM
-    }
-
-    if (!suppliedElsewhere("rstTimeSinceFire", sim)) {
-      ## fireSense uses `nonForest_timeSinceDisturbance`
-      if (suppliedElsewhere("nonForest_timeSinceDisturbance", sim)) {
-        sim$rstTimeSinceFire <- sim$nonForest_timeSinceDisturbance
-      } else {
-        sim$rstTimeSinceFire <- LandR::prepInputsStandAgeMap(
-          dataSource = "SCANFI",
-          dataYear = P(sim)$dataYear,
-          ageFun = "terra::rast",
-          cropTo = sim$flammableMap,
-          maskTo = sim$flammableMap,
-          destinationPath = outputPath(sim)
-        )
-
-        sim$rstTimeSinceFire[sim$flammableMap[] == 0L] <- NA ## non-flammable areas are permanent
-        sim$rstTimeSinceFire[] <- as.integer(sim$rstTimeSinceFire[])
-      }
-    }
+    # if (!suppliedElsewhere("rstTimeSinceFire", sim)) {
+    #   ## fireSense uses `nonForest_timeSinceDisturbance`
+    #   if (suppliedElsewhere("nonForest_timeSinceDisturbance", sim)) {
+    #     sim$rstTimeSinceFire <- sim$nonForest_timeSinceDisturbance
+    #   } else {
+    #     sim$rstTimeSinceFire <- LandR::prepInputsStandAgeMap(
+    #       dataSource = "SCANFI",
+    #       dataYear = P(sim)$dataYear,
+    #       ageFun = "terra::rast",
+    #       cropTo = sim$flammableMap,
+    #       maskTo = sim$flammableMap,
+    #       destinationPath = outputPath(sim)
+    #     )
+    # 
+    #     sim$rstTimeSinceFire[sim$flammableMap[] == 0L] <- NA ## non-flammable areas are permanent
+    #     sim$rstTimeSinceFire[] <- as.integer(sim$rstTimeSinceFire[])
+    #   }
+    # }
   } else if (P(sim)$mode == "multi") {
     stopifnot(suppliedElsewhere("reportingPolygons", sim))
   }
