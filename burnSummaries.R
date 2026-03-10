@@ -91,7 +91,7 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
   switch(
     eventType,
     init = {
-      mod$analysesOutputsTimes <- analysesOutputsTimes(P(sim)$summaryPeriod, P(sim)$summaryInterval)
+      mod$analysesOutputsTimes <- start(sim) + analysesOutputsTimes(P(sim)$summaryPeriod, P(sim)$summaryInterval)
 
       if (P(sim)$mode == "single") {
         sim <- InitSingle(sim)
@@ -100,7 +100,7 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
         sim <- scheduleEvent(sim, end(sim), "burnSummaries", "create_fireSizes", .last())
 
         sim <- scheduleEvent(sim, start(sim), "burnSummaries", "save_single", .last())
-        sim <- scheduleEvent(sim, P(sim)$summaryPeriod[1], "burnSummaries", "save_single", .last())
+        sim <- scheduleEvent(sim, start(sim) + P(sim)$summaryPeriod[1], "burnSummaries", "save_single", .last())
         sim <- scheduleEvent(sim, end(sim), "burnSummaries", "save_single", .last())
       } else if (P(sim)$mode == "multi") {
         sim <- InitMulti(sim)
