@@ -88,7 +88,8 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
   switch(
     eventType,
     init = {
-      mod$analysesOutputsTimes <- start(sim) + analysesOutputsTimes(P(sim)$summaryPeriod, P(sim)$summaryInterval)
+      mod$analysesOutputsTimes <- start(sim) +
+        analysesOutputsTimes(P(sim)$summaryPeriod, P(sim)$summaryInterval)
 
       if (P(sim)$mode == "single") {
         sim <- InitSingle(sim)
@@ -202,12 +203,14 @@ InitSingle <- function(sim) {
 
     sim <- objectSynonyms(sim, list(c("flammableRTM", "flammableMap")))
   }
-  
-  
+
   if (is.null(sim$rstTimeSinceFire)) {
     ## fireSense uses `nonForest_timeSinceDisturbance`
     if (!is.null(sim$nonForest_timeSinceDisturbance)) {
-      sim$rstTimeSinceFire <- postProcess(sim$nonForest_timeSinceDisturbance, to = sim$flammableMap)
+      sim$rstTimeSinceFire <- reproducible::postProcess(
+        sim$nonForest_timeSinceDisturbance,
+        to = sim$flammableMap
+      )
     } else {
       sim$rstTimeSinceFire <- LandR::prepInputsStandAgeMap(
         dataSource = "SCANFI",
@@ -217,13 +220,13 @@ InitSingle <- function(sim) {
         maskTo = sim$flammableMap,
         destinationPath = outputPath(sim)
       )
-      
+
       ## non-flammable areas are permanent
       sim$rstTimeSinceFire[sim$flammableMap[] == 0L] <- NA
       sim$rstTimeSinceFire[] <- as.integer(sim$rstTimeSinceFire[])
     }
   }
-  
+
   ## sanity check
   terra::compareGeom(
     sim$rstCurrentBurn,
@@ -323,10 +326,10 @@ FireSummaries <- function(sim) {
 
     data.table::fread(f_fireSizes)
   }) |>
-    rbindlist()
+    data.table::rbindlist()
 
   f_out <- file.path(outputPath(sim), paste0("burnSummaries_fireSizes_allReps.csv"))
-  fwrite(sim$fireSizes, f_out)
+  data.table::fwrite(sim$fireSizes, f_out)
 
   ## TODO: add this file to list of outputs
   sim <- registerOutputs(f_out, sim)
@@ -342,40 +345,40 @@ plotFun <- function(sim) {
   ## cumulative burn maps
   use_palette = "muted" # "bl_yl_rd"
 
-  ggCumulBurnMapExp <- ggplot() +
+  ggCumulBurnMapExp <- ggplot2::ggplot() +
     tidyterra::geom_spatraster(data = mod$meanAnnualCumulBurnMapHistoric) +
     tidyterra::scale_fill_whitebox_c(palette = use_palette) +
-    theme_bw() +
+    ggplot2::theme_bw() +
     ggspatial::annotation_north_arrow(
       location = "bl",
       which_north = "true",
-      pad_x = unit(0.25, "in"),
-      pad_y = unit(0.25, "in"),
+      pad_x = ggplot2::unit(0.25, "in"),
+      pad_y = ggplot2::unit(0.25, "in"),
       style = north_arrow_fancy_orienteering
     ) +
-    xlab("Longitude") +
-    ylab("Latitude") +
-    ggtitle(paste("Historic mean annual cumulative burn map for", studyAreaName))
+    ggplot2::xlab("Longitude") +
+    ggplot2::ylab("Latitude") +
+    ggplot2::ggtitle(paste("Historic mean annual cumulative burn map for", studyAreaName))
 
-  ggCumulBurnMapSim <- ggplot() +
+  ggCumulBurnMapSim <- ggplot2::ggplot() +
     tidyterra::geom_spatraster(data = mod$meanAnnualCumulBurnMap) +
     tidyterra::scale_fill_whitebox_c(palette = use_palette) +
-    theme_bw() +
+    ggplot2::theme_bw() +
     ggspatial::annotation_north_arrow(
       location = "bl",
       which_north = "true",
-      pad_x = unit(0.25, "in"),
-      pad_y = unit(0.25, "in"),
+      pad_x = ggplot2::unit(0.25, "in"),
+      pad_y = ggplot2::unit(0.25, "in"),
       style = north_arrow_fancy_orienteering
     ) +
-    xlab("Longitude") +
-    ylab("Latitude") +
-    ggtitle(paste("Simulated mean annual cumulative burn map for", studyAreaName))
+    ggplot2::xlab("Longitude") +
+    ggplot2::ylab("Latitude") +
+    ggplot2::ggtitle(paste("Simulated mean annual cumulative burn map for", studyAreaName))
 
   if ("png" %in% P(sim)$.plots) {
     fggCumulBurnMap <- file.path(figurePath(sim), "cumulative_burn_maps.png")
     ggCumulBurnMap <- (ggCumulBurnMapExp | ggCumulBurnMapSim)
-    ggsave(fggCumulBurnMap, ggCumulBurnMap, height = 10, width = 20, type = "cairo")
+    ggplot2::ggsave(fggCumulBurnMap, ggCumulBurnMap, height = 10, width = 20, type = "cairo")
     sim <- registerOutputs(fggCumulBurnMap, sim)
   }
 
@@ -411,7 +414,7 @@ plotFun <- function(sim) {
     subsetDT[, binIDexp := cut(logExpSizeHa, hexp$breaks)]
     ## fmt: skip
     summaryExpDT <- subsetDT[ , lapply(.SD, stats::median, na.rm = TRUE), by = binIDexp, .SDcols = "expSizeHa"]
-    setnames(summaryExpDT, "expSizeHa", "medExpSizeHa")
+    data.table::setnames(summaryExpDT, "expSizeHa", "medExpSizeHa")
     summaryExpDT <- summaryExpDT[, medLogExpSizeHa := log(medExpSizeHa)]
 
     midsExp <- cbind(
@@ -431,7 +434,7 @@ plotFun <- function(sim) {
   subsetDT[, binIDsim := cut(logSimSizeHa, hsim$breaks)]
   ## fmt: skip
   summarySimDT <- subsetDT[, lapply(.SD, stats::median, na.rm = TRUE), by = binIDsim, .SDcols = "simSizeHa"]
-  setnames(summarySimDT, "simSizeHa", "medSimSizeHa")
+  data.table::setnames(summarySimDT, "simSizeHa", "medSimSizeHa")
   summarySimDT <- summarySimDT[, medLogSimSizeHa := log(medSimSizeHa)]
 
   midsSim <- cbind(
@@ -449,31 +452,34 @@ plotFun <- function(sim) {
   x_lab <- "log[fireSize] (ha)"
 
   if (isTRUE(fireModelUsesTargetSize)) {
-    ggHistExp <- ggplot(subsetDT, aes(x = logExpSizeHa)) +
-      geom_histogram(breaks = breaks, alpha = 0.5, fill = y1col) +
-      stat_summary_bin(
+    ggHistExp <- ggplot2::ggplot(subsetDT, ggplot2::aes(x = logExpSizeHa)) +
+      ggplot2::geom_histogram(breaks = breaks, alpha = 0.5, fill = y1col) +
+      ggplot2::stat_summary_bin(
         data = summaryExpDT,
-        mapping = aes(x = midsExp, y = medLogExpSizeHa * scaleFactorExp),
+        mapping = ggplot2::aes(x = midsExp, y = medLogExpSizeHa * scaleFactorExp),
         fun = "identity",
         geom = "point",
         breaks = breaks,
         col = y2col
       ) +
-      scale_y_continuous(y1lab, sec.axis = sec_axis(~ . / scaleFactorExp, name = y2lab)) +
-      xlab(x_lab) +
-      ggtitle(paste("Total expected number and size of fires in", studyAreaName)) +
-      theme_bw() +
-      theme(
-        axis.title.y.left = element_text(color = y1col),
-        axis.text.y.left = element_text(color = y1col),
-        axis.title.y.right = element_text(color = y2col),
-        axis.text.y.right = element_text(color = y2col)
+      ggplot2::scale_y_continuous(
+        y1lab,
+        sec.axis = ggplot2::sec_axis(~ . / scaleFactorExp, name = y2lab)
+      ) +
+      ggplot2::xlab(x_lab) +
+      ggplot2::ggtitle(paste("Total expected number and size of fires in", studyAreaName)) +
+      ggplot2::theme_bw() +
+      ggplot2::theme(
+        axis.title.y.left = ggplot2::element_text(color = y1col),
+        axis.text.y.left = ggplot2::element_text(color = y1col),
+        axis.title.y.right = ggplot2::element_text(color = y2col),
+        axis.text.y.right = ggplot2::element_text(color = y2col)
       )
   }
 
-  ggHistSim <- ggplot(subsetDT, aes(x = logSimSizeHa)) +
-    geom_histogram(breaks = breaks, alpha = 0.5, fill = y1col) +
-    stat_summary_bin(
+  ggHistSim <- ggplot2::ggplot(subsetDT, ggplot2::aes(x = logSimSizeHa)) +
+    ggplot2::geom_histogram(breaks = breaks, alpha = 0.5, fill = y1col) +
+    ggplot2::stat_summary_bin(
       data = summarySimDT,
       mapping = aes(x = midsSim, y = medLogSimSizeHa * scaleFactorSim),
       fun = "identity",
@@ -481,57 +487,66 @@ plotFun <- function(sim) {
       breaks = breaks,
       col = y2col
     ) +
-    scale_y_continuous(y1lab, sec.axis = sec_axis(~ . / scaleFactorSim, name = y2lab)) +
-    xlab(x_lab) +
-    ggtitle(paste("Total simulated number and size of fires in", studyAreaName)) +
-    theme_bw() +
-    theme(
-      axis.title.y.left = element_text(color = y1col),
-      axis.text.y.left = element_text(color = y1col),
-      axis.title.y.right = element_text(color = y2col),
-      axis.text.y.right = element_text(color = y2col)
+    ggplot2::scale_y_continuous(
+      y1lab,
+      sec.axis = ggplot2::sec_axis(~ . / scaleFactorSim, name = y2lab)
+    ) +
+    ggplot2::xlab(x_lab) +
+    ggplot2::ggtitle(paste("Total simulated number and size of fires in", studyAreaName)) +
+    ggplot2::theme_bw() +
+    ggplot2::theme(
+      axis.title.y.left = ggplot2::element_text(color = y1col),
+      axis.text.y.left = ggplot2::element_text(color = y1col),
+      axis.title.y.right = ggplot2::element_text(color = y2col),
+      axis.text.y.right = ggplot2::element_text(color = y2col)
     )
 
   if ("png" %in% P(sim)$.plots) {
     if (isTRUE(fireModelUsesTargetSize)) {
       fggHistExp <- file.path(figurePath(sim), "expected_number_size_fires.png")
-      ggsave(fggHistExp, ggHistExp, height = 10, width = 10, type = "cairo")
+      ggplot2::ggsave(fggHistExp, ggHistExp, height = 10, width = 10, type = "cairo")
       sim <- registerOutputs(fggHistExp, sim)
     }
 
     fggHistSim <- file.path(figurePath(sim), "simulated_number_size_fires.png")
-    ggsave(fggHistSim, ggHistSim, height = 10, width = 10, type = "cairo")
+    ggplot2::ggsave(fggHistSim, ggHistSim, height = 10, width = 10, type = "cairo")
     sim <- registerOutputs(fggHistSim, sim)
   }
 
   if (isTRUE(fireModelUsesTargetSize)) {
     ## exp vs sim fire sizes
-    ggExpVsSim <- ggplot(subsetDT, aes(x = expSizeHa, y = simSizeHa)) +
-      geom_smooth(method = lm) +
-      scale_x_continuous(limits = c(0, NA)) +
-      scale_y_continuous(limits = c(0, NA)) +
-      xlab("Expected fire size (ha)") +
-      ylab("Simulated fire size (ha)") +
-      ggtitle(paste("Expected vs. simulated fire sizes in", studyAreaName)) +
-      theme_bw() +
-      geom_abline(slope = 1, lty = "dotted")
+    ggExpVsSim <- ggplot2::ggplot(subsetDT, ggplot2::aes(x = expSizeHa, y = simSizeHa)) +
+      ggplot2::geom_smooth(method = lm) +
+      ggplot2::scale_x_continuous(limits = c(0, NA)) +
+      ggplot2::scale_y_continuous(limits = c(0, NA)) +
+      ggplot2::xlab("Expected fire size (ha)") +
+      ggplot2::ylab("Simulated fire size (ha)") +
+      ggplot2::ggtitle(paste("Expected vs. simulated fire sizes in", studyAreaName)) +
+      ggplot2::theme_bw() +
+      ggplot2::geom_abline(slope = 1, lty = "dotted")
 
-    ggExpVsSimHex <- ggplot(subsetDT, aes(x = expSizeHa, y = simSizeHa)) +
-      geom_hex(bins = 50) +
-      xlab("Expected fire size (ha)") +
-      ylab("Simulated fire size (ha)") +
-      ggtitle(paste("Expected vs. simulated fire sizes in", studyAreaName)) +
-      theme_bw() +
-      geom_abline(slope = 1, lty = "dotted")
+    ggExpVsSimHex <- ggplot2::ggplot(subsetDT, ggplot2::aes(x = expSizeHa, y = simSizeHa)) +
+      ggplot2::geom_hex(bins = 50) +
+      ggplot2::xlab("Expected fire size (ha)") +
+      ggplot2::ylab("Simulated fire size (ha)") +
+      ggplot2::ggtitle(paste("Expected vs. simulated fire sizes in", studyAreaName)) +
+      ggplot2::theme_bw() +
+      ggplot2::geom_abline(slope = 1, lty = "dotted")
 
     if ("png" %in% P(sim)$.plots) {
       ## NOTE: keep 1:1 aspect ratio on these plots
       fggExpVsSim <- file.path(figurePath(sim), "exp_vs_sim_fire_sizes.png")
-      ggsave(filename = fggExpVsSim, plot = ggExpVsSim, height = 10, width = 10, type = "cairo")
+      ggplot2::ggsave(
+        filename = fggExpVsSim,
+        plot = ggExpVsSim,
+        height = 10,
+        width = 10,
+        type = "cairo"
+      )
       sim <- registerOutputs(fggExpVsSim, sim)
 
       fggExpVsSimHex <- file.path(figurePath(sim), "exp_vs_sim_fire_sizes_hex.png")
-      ggsave(
+      ggplot2::ggsave(
         filename = fggExpVsSimHex,
         plot = ggExpVsSimHex,
         height = 10,
