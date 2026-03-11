@@ -207,7 +207,7 @@ InitSingle <- function(sim) {
   if (is.null(sim$rstTimeSinceFire)) {
     ## fireSense uses `nonForest_timeSinceDisturbance`
     if (!is.null(sim$nonForest_timeSinceDisturbance)) {
-      sim$rstTimeSinceFire <- sim$nonForest_timeSinceDisturbance
+      sim$rstTimeSinceFire <- postProcess(sim$nonForest_timeSinceDisturbance, to = sim$flammableMap)
     } else {
       sim$rstTimeSinceFire <- LandR::prepInputsStandAgeMap(
         dataSource = "SCANFI",
