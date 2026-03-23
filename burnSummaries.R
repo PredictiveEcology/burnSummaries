@@ -7,13 +7,13 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.0.1"),
+  version = list(burnSummaries = "1.0.2"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("NEWS.md", "README.md", "burnSummaries.Rmd"),
   loadOrder = list(after = c("fireSense", "LandMine", "scfmSpread")),
-  reqdPkgs = list("data.table", "dplyr", "ggplot2", "ggspatial", "kSamples", "patchwork",
+  reqdPkgs = list("archive", "data.table", "dplyr", "ggplot2", "ggspatial", "kSamples", "patchwork", "purrr",
                   "reproducible", "SpaDES.core", "stringr", "terra", "tidyterra"),
   parameters = bindrows(
     defineParameter("fireTimestep", "integer", 1L, NA, NA,
@@ -98,6 +98,7 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
         sim <- scheduleEvent(sim, end(sim), "burnSummaries", "create_fireSizes", .last())
 
         sim <- scheduleEvent(sim, start(sim), "burnSummaries", "save_single", .last())
+        ## fmt: skip
         sim <- scheduleEvent(sim, start(sim) + P(sim)$summaryPeriod[1], "burnSummaries", "save_single", .last())
         sim <- scheduleEvent(sim, end(sim), "burnSummaries", "save_single", .last())
       } else if (P(sim)$mode == "multi") {
@@ -185,11 +186,7 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
         sim <- registerOutputs(f_flammableMap, sim)
       }
     },
-    ## fmt: skip
-    warning(paste(
-      "Undefined event type: \'", current(sim)[1, "eventType", with = FALSE],
-      "\' in module \'", current(sim)[1, "moduleName", with = FALSE], "\'", sep = ""
-    ))
+    noEventWarning(sim)
   )
   return(invisible(sim))
 }
@@ -275,13 +272,40 @@ InitMulti <- function(sim) {
 
   meanAnnualCumulBurnMap <- burnMaps / length(allReps)
 
-  firePolys <- prepInputs(
-    url = "https://cwfis.cfs.nrcan.gc.ca/downloads/nfdb/fire_poly/current_version/NFDB_poly.zip",
-    fun = "terra::vect",
-    destinationPath = inputPath(sim)
-  ) |>
-    reproducible::Cache() |>
-    terra::project(flammableMap)
+  ## get NFDB fire polygons (TODO: use an updated/working prepInputs version)
+  message("preparing historical cumulative burn map using NFDB polygons...")
+  firePolys <- {
+    dst <- inputPath(sim)
+    nfdb_url <- "https://cwfis.cfs.nrcan.gc.ca/downloads/nfdb/fire_poly/current_version/NFDB_poly.zip"
+    nfdb_zip <- file.path(dst, basename(nfdb_url))
+
+    if (!file.exists(nfdb_zip)) {
+      download.file(nfdb_url, destfile = nfdb_zip)
+    }
+
+    all_nfdb_files <- fs::dir_ls(dst, regexp = "NFDB_poly_(1972to2020|2021to2024).*")
+
+    if (length(all_nfdb_files) != 16) {
+      archive::archive_extract(nfdb_zip, dst)
+    }
+
+    nfdb_shp <- fs::dir_ls(dst, regexp = "NFDB_poly_(1972to2020|2021to2024).*[.]shp$")
+
+    purrr::map(.x = nfdb_shp, .f = function(x) {
+      p <- terra::vect(x)
+
+      ## NOTE: terra::makeValid takes so long;
+      ## just drop the tiny number of invalid geometries
+      p[terra::is.valid(p), ]
+    }) |>
+      tidyterra::bind_spat_rows() |>
+      tidyterra::mutate(
+        YEAR = as.integer(YEAR),
+        MONTH = as.integer(MONTH),
+        DAY = as.integer(DAY)
+      ) |>
+      terra::project(flammableMap)
+  }
 
   fireYears <- tidyterra::filter(firePolys, YEAR > 0) |> dplyr::pull("YEAR") |> unique() |> sort()
   meanAnnualCumulBurnMapHistoric <- terra::rasterize(
@@ -291,6 +315,13 @@ InitMulti <- function(sim) {
     fun = "count"
   )
   meanAnnualCumulBurnMapHistoric <- meanAnnualCumulBurnMapHistoric / length(fireYears)
+  f_meanAnnualCumulBurnMapHistoric <- file.path(
+    outputPath(sim),
+    "meanAnnualCumulBurnMapHistoric.tif"
+  )
+  terra::writeRaster(meanAnnualCumulBurnMapHistoric, f_meanAnnualCumulBurnMapHistoric)
+  sim <- registerOutputs(f_meanAnnualCumulBurnMapHistoric, sim)
+  message("...done")
 
   nonFlammable <- which(
     is.na(terra::values(flammableMap, mat = FALSE)) | terra::values(flammableMap, mat = FALSE) == 0
