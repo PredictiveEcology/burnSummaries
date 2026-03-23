@@ -319,7 +319,11 @@ InitMulti <- function(sim) {
     outputPath(sim),
     "meanAnnualCumulBurnMapHistoric.tif"
   )
-  terra::writeRaster(meanAnnualCumulBurnMapHistoric, f_meanAnnualCumulBurnMapHistoric)
+  terra::writeRaster(
+    meanAnnualCumulBurnMapHistoric,
+    f_meanAnnualCumulBurnMapHistoric,
+    overwrite = TRUE
+  )
   sim <- registerOutputs(f_meanAnnualCumulBurnMapHistoric, sim)
   message("...done")
 
