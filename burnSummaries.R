@@ -53,8 +53,7 @@ defineModule(sim, list(
   ),
   inputObjects = bindrows(
     expectsInput("burnMap", "SpatRaster",
-                 desc = paste("Cumulative burn map.",
-                              "Required in single mode.")),
+                 desc = paste("Cumulative burn map.", "Required in single mode.")),
     expectsInput("burnSummary", "data.table",
                  desc = paste("Fire summary table from `fireSense` or `scfm`.",
                               "One of `burnSummary` or `fireSizes` is required in single mode.")),
