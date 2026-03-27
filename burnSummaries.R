@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.0.2.9000"),
+  version = list(burnSummaries = "1.0.2.9001"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -30,7 +30,7 @@ defineModule(sim, list(
                     "Simulation start and end times when running in 'multi' mode."),
     defineParameter("summaryInterval", "integer", 100L, NA, NA,
                     "simulation time interval at which to take 'snapshots' used for summary analyses"),
-    defineParameter("summaryPeriod", "integer", c(700L, 1000L), NA, NA,
+    defineParameter("summaryPeriod", "integer", start(sim) + c(700L, 1000L), NA, NA,
                     "lower and upper end of the range of simulation times used for summary analyses"),
     defineParameter(".plots", "character", "png", NA, NA,
                     "Used by `Plots` function, which can be optionally used here."),
@@ -87,9 +87,10 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
   switch(
     eventType,
     init = {
-      if (P(sim)$summaryPeriod[1] < start(sim) || P(sim)$summaryPeriod[2] > end(sim)) {
+      if (min(P(sim)$summaryPeriod) < start(sim) || max(P(sim)$summaryPeriod) > end(sim)) {
         stop("summaryPeriod values are outside the range of simulation times")
       }
+
       mod$analysesOutputsTimes <- start(sim) +
         analysesOutputsTimes(P(sim)$summaryPeriod, P(sim)$summaryInterval)
 
