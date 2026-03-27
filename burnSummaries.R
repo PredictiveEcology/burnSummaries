@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.0.2"),
+  version = list(burnSummaries = "1.0.2.9000"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -73,7 +73,7 @@ defineModule(sim, list(
                               "One of `rstTimeSinceFire` or `nonForest_timeSinceDisturbance` is required in single mode.")),
   ),
   outputObjects = bindrows(
-    createsOutput("fireSizes", "data.table", 
+    createsOutput("fireSizes", "data.table",
                   desc = "summary fire sizes table"),
     createsOutput("rstTimeSinceFire", "SpatRaster",
                   desc = "map of time since last burn, with non-flammable pixels receiving `NA`.")
@@ -87,6 +87,9 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
   switch(
     eventType,
     init = {
+      if (P(sim)$summaryPeriod[1] < start(sim) || P(sim)$summaryPeriod[2] > end(sim)) {
+        stop("summaryPeriod values are outside the range of simulation times")
+      }
       mod$analysesOutputsTimes <- start(sim) +
         analysesOutputsTimes(P(sim)$summaryPeriod, P(sim)$summaryInterval)
 
