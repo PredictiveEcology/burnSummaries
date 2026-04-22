@@ -9,7 +9,6 @@ defineModule(sim, list(
   childModules = character(0),
   version = list(burnSummaries = "1.0.2.9001"),
   timeframe = as.POSIXlt(c(NA, NA)),
-  
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("NEWS.md", "README.md", "burnSummaries.Rmd"),
