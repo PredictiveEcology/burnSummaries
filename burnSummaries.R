@@ -9,6 +9,7 @@ defineModule(sim, list(
   childModules = character(0),
   version = list(burnSummaries = "1.0.2.9001"),
   timeframe = as.POSIXlt(c(NA, NA)),
+  
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("NEWS.md", "README.md", "burnSummaries.Rmd"),
@@ -57,12 +58,19 @@ defineModule(sim, list(
     expectsInput("burnSummary", "data.table",
                  desc = paste("Fire summary table from `fireSense` or `scfm`.",
                               "One of `burnSummary` or `fireSizes` is required in single mode.")),
+    expectsInput("firePolys", "list", sourceURL = NA,
+                 paste0("Optional. This module will load this if it does not exist. ", 
+                        "List of sf polygon objects representing annual fire polygons.",
+                        "List must be named with followign convention: `year<numeric year>`")),
     expectsInput("fireSizes", "list",
                  desc = paste("Fire sizes summary tables from LandMine.",
                               "One of `burnSummary` or `fireSizes` is required in single mode.")),
     expectsInput("flammableMap", "SpatRaster",
                  desc = paste("Binary flammability map.",
                               "Required in single mode.")),
+    expectsInput("outputsDF",  "data.table",
+                 desc = paste("The rbindlisted outputs(sim) of all the sims being used; i.e., it ",
+                              "will contain all the files that may exist")),
     expectsInput("nonForest_timeSinceDisturbance",  "SpatRaster",
                  desc = paste("map of time since last burn, with non-flammable pixels receiving `NA`.",
                               "One of `rstTimeSinceFire` or `nonForest_timeSinceDisturbance` is required in single mode.")),
@@ -91,8 +99,8 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
         stop("summaryPeriod values are outside the range of simulation times")
       }
 
-      mod$analysesOutputsTimes <- start(sim) +
-        analysesOutputsTimes(P(sim)$summaryPeriod, P(sim)$summaryInterval)
+      mod$analysesOutputsTimes <- # start(sim) +
+        LandWebUtils::analysesOutputsTimes(P(sim)$summaryPeriod, P(sim)$summaryInterval)
 
       if (P(sim)$mode == "single") {
         sim <- InitSingle(sim)
@@ -102,7 +110,8 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
 
         sim <- scheduleEvent(sim, start(sim), "burnSummaries", "save_single", .last())
         ## fmt: skip
-        sim <- scheduleEvent(sim, start(sim) + P(sim)$summaryPeriod[1], "burnSummaries", "save_single", .last())
+        sim <- scheduleEvent(sim, # start(sim) + 
+                               P(sim)$summaryPeriod[1], "burnSummaries", "save_single", .last())
         sim <- scheduleEvent(sim, end(sim), "burnSummaries", "save_single", .last())
       } else if (P(sim)$mode == "multi") {
         sim <- InitMulti(sim)
@@ -243,24 +252,53 @@ InitSingle <- function(sim) {
 
 InitMulti <- function(sim) {
   ## check for necessary output files -----------------------------------------------
-  allReps <- sprintf("rep%02d", P(sim)$reps)
+
+  browser()
+  mod$useOutputs <- NROW(sim$outputsDF) > 0
+  if (mod$useOutputs) {
+    reps_str <- sub(".*/rep(\\d+)/.*", "\\1", sim$outputsDF$file)
+    mod$allReps <- paste0("rep", sort(unique(reps_str[as.integer(reps_str) %in% Par$reps])))
+    
+  } else {
+    mod$allReps <- sprintf("rep%02d", P(sim)$reps)
+  }
+  if (all(is.na(P(sim)$simTimes))) {
+    P(sim)$simTimes <- unlist(times(sim)[c("start", "end")])
+  }
   padL <- ceiling(log10(P(sim)$simTimes[2] + 1))
   padYearStart <- paddedFloatToChar(P(sim)$simTimes[1], padL = padL)
   padYearEnd <- paddedFloatToChar(P(sim)$simTimes[2], padL = padL)
 
   ## all reps have same flammable map
-  flm <- file.path(outputPath(sim), allReps[1], paste0("flammableMap_year", padYearEnd, ".tif"))
-
+  if (mod$useOutputs) {
+    flm <- unique(grep("flammable", sim$outputsDF$file, value = TRUE))
+    flm <- grep(mod$allReps[1], flm, value = TRUE)
+  } else {
+    flm <- file.path(outputPath(sim), mod$allReps[1], paste0("flammableMap_year", padYearEnd, ".tif"))
+  }
+  
   stopifnot(file.exists(flm))
 
   flammableMap <- terra::rast(flm)
   pixelSize <- terra::res(flammableMap) ## keep both x and y dimensions
 
-  burnMaps <- lapply(allReps, function(rep) {
-    message(paste("Loading burn maps for rep", rep, "..."))
-    fbm <- file.path(outputPath(sim), rep, paste0("burnMap_year", padYearEnd, ".tif"))
-
-    stopifnot(file.exists(fbm))
+  if (mod$useOutputs) {
+    burnMaps <- lapply(mod$allReps, function(rep) {
+      message(paste("Loading burn maps for rep", rep, "..."))
+      burnMaps <- unique(grep(paste0(rep, ".+burnMap"), sim$outputsDF$file, value = TRUE))
+      fs::path_rel(burnMaps, start = ".")
+    }) |> unlist()
+    
+  } else {
+    burnMaps <- lapply(mod$allReps, function(rep) {
+      message(paste("Loading burn maps for rep", rep, "..."))
+      file.path(outputPath(sim), rep, paste0("burnMap_year", padYearEnd, ".tif"))
+    })
+    
+  }
+  burnMaps <- Map(fbm = burnMaps[file.exists(burnMaps)], function(fbm) {
+    
+    # stopifnot(file.exists(fbm))
 
     cumulBurnMap <- terra::rast(fbm)
 
@@ -273,41 +311,51 @@ InitMulti <- function(sim) {
     terra::rast() |>
     terra::app(sum, na.rm = TRUE)
 
-  meanAnnualCumulBurnMap <- burnMaps / length(allReps)
+  meanAnnualCumulBurnMap <- burnMaps / length(mod$allReps)
 
   ## get NFDB fire polygons (TODO: use an updated/working prepInputs version)
   message("preparing historical cumulative burn map using NFDB polygons...")
-  firePolys <- {
-    dst <- inputPath(sim)
-    nfdb_url <- "https://cwfis.cfs.nrcan.gc.ca/downloads/nfdb/fire_poly/current_version/NFDB_poly.zip"
-    nfdb_zip <- file.path(dst, basename(nfdb_url))
-
-    if (!file.exists(nfdb_zip)) {
-      download.file(nfdb_url, destfile = nfdb_zip)
-    }
-
-    all_nfdb_files <- fs::dir_ls(dst, regexp = "NFDB_poly_(1972to2020|2021to2024).*")
-
-    if (length(all_nfdb_files) != 16) {
-      archive::archive_extract(nfdb_zip, dst)
-    }
-
-    nfdb_shp <- fs::dir_ls(dst, regexp = "NFDB_poly_(1972to2020|2021to2024).*[.]shp$")
-
-    purrr::map(.x = nfdb_shp, .f = function(x) {
-      p <- terra::vect(x)
-
-      ## NOTE: terra::makeValid takes so long;
-      ## just drop the tiny number of invalid geometries
-      p[terra::is.valid(p), ]
-    }) |>
-      tidyterra::bind_spat_rows() |>
+  if (exists("firePolys", envir(sim))) {
+    # firePolys <- Map(fp = sims[[1]]$firePolys, function(fp) .unwrap(fp))
+    firePolys <- sim$firePolys |> tidyterra::bind_spat_rows() |>
       tidyterra::mutate(
-        YEAR = as.integer(YEAR),
-        MONTH = as.integer(MONTH),
-        DAY = as.integer(DAY)
-      ) |>
-      terra::project(flammableMap)
+        YEAR = as.integer(YEAR)#,
+        #MONTH = as.integer(MONTH),
+        #DAY = as.integer(DAY)
+      )
+  } else {
+    firePolys <- {
+      dst <- inputPath(sim)
+      nfdb_url <- "https://cwfis.cfs.nrcan.gc.ca/downloads/nfdb/fire_poly/current_version/NFDB_poly.zip"
+      nfdb_zip <- file.path(dst, basename(nfdb_url))
+      
+      if (!file.exists(nfdb_zip)) {
+        download.file(nfdb_url, destfile = nfdb_zip)
+      }
+      
+      all_nfdb_files <- fs::dir_ls(dst, regexp = "NFDB_poly_(1972to2020|2021to2024).*")
+      
+      if (length(all_nfdb_files) != 16) {
+        archive::archive_extract(nfdb_zip, dst)
+      }
+      
+      nfdb_shp <- fs::dir_ls(dst, regexp = "NFDB_poly_(1972to2020|2021to2024).*[.]shp$")
+      
+      purrr::map(.x = nfdb_shp, .f = function(x) {
+        p <- terra::vect(x)
+        
+        ## NOTE: terra::makeValid takes so long;
+        ## just drop the tiny number of invalid geometries
+        p[terra::is.valid(p), ]
+      }) |>
+        tidyterra::bind_spat_rows() |>
+        tidyterra::mutate(
+          YEAR = as.integer(YEAR),
+          MONTH = as.integer(MONTH),
+          DAY = as.integer(DAY)
+        ) |>
+        terra::project(flammableMap)
+    }
   }
 
   fireYears <- tidyterra::filter(firePolys, YEAR > 0) |> dplyr::pull("YEAR") |> unique() |> sort()
@@ -350,22 +398,26 @@ InitMulti <- function(sim) {
 }
 
 FireSummaries <- function(sim) {
-  allReps <- sprintf("rep%02d", P(sim)$reps)
+  # allReps <- sprintf("rep%02d", P(sim)$reps)
   padL <- ceiling(log10(P(sim)$simTimes[2] + 1))
   padYearStart <- paddedFloatToChar(P(sim)$simTimes[1], padL = padL)
   padYearEnd <- paddedFloatToChar(P(sim)$simTimes[2], padL = padL)
 
   studyAreaName <- P(sim)$.studyAreaName
 
-  sim$fireSizes <- lapply(allReps, function(rep) {
-    f_fireSizes <- file.path(outputPath(sim), rep, "burnSummaries_fireSizes.csv")
-
+  sim$fireSizes <- lapply(mod$allReps, function(rep) {
+    if (mod$useOutputs) {
+      f_fireSizes <- grep(paste0(rep, ".+burnSummaries_fireSizes.csv"), sim$outputsDF$file, value = TRUE)
+      f_fireSizes <- fs::path_rel(f_fireSizes)
+    } else {
+      f_fireSizes <- file.path(outputPath(sim), rep, "burnSummaries_fireSizes.csv")
+    }
     stopifnot(file.exists(f_fireSizes))
 
     data.table::fread(f_fireSizes)
   }) |>
     data.table::rbindlist()
-
+  
   f_out <- file.path(outputPath(sim), paste0("burnSummaries_fireSizes_allReps.csv"))
   data.table::fwrite(sim$fireSizes, f_out)
 
@@ -422,7 +474,7 @@ plotFun <- function(sim) {
 
   ## fire size histograms w/ median fire sizes
   pixelSizeHa <- prod(mod$pixelSize) / 10^4
-
+  
   subsetDT <- sim$fireSizes[simArea == studyAreaName & (expSize > 0 | simSize > 0), ]
 
   ## scfm and fireSense don't set target fire sizes, but LandMine does
