@@ -627,11 +627,11 @@ plotFun <- function(sim) {
         )
       } else {
         sim$rstTimeSinceFire <- LandR::prepInputsStandAgeMap(
+          rasterToMatch = sim$flammableMap, ## resample SCANFI (30 m) to the flammableMap grid
           dataSource = "SCANFI",
           dataYear = P(sim)$dataYear,
           ageFun = "terra::rast",
-          cropTo = sim$flammableMap,
-          maskTo = sim$flammableMap,
+          maskWithRTM = TRUE,
           destinationPath = outputPath(sim)
         )
 
