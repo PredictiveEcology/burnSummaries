@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.0.2.9001"),
+  version = list(burnSummaries = "1.0.2.9002"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -16,6 +16,8 @@ defineModule(sim, list(
   reqdPkgs = list("archive", "data.table", "dplyr", "ggplot2", "ggspatial", "kSamples", "patchwork", "purrr",
                   "reproducible", "SpaDES.core", "stringr", "terra", "tidyterra"),
   parameters = bindrows(
+    defineParameter("dataYear", "integer", 2020L, NA, NA,
+                    "data year for the SCANFI stand-age inputs used to seed rstTimeSinceFire (single mode)"),
     defineParameter("fireTimestep", "integer", 1L, NA, NA,
                     "simulation time interval between burn events"),
     defineParameter("mode", "character", "single", NA, NA,
@@ -610,6 +612,34 @@ plotFun <- function(sim) {
   ## so don't implement a hard requirement for either here.
   if (P(sim)$mode == "single") {
     stopifnot(suppliedElsewhere("burnMap", sim))
+
+    ## Create the initial rstTimeSinceFire HERE (in addition to InitSingle) when
+    ## flammableMap is supplied directly, so modules that init BEFORE burnSummaries --
+    ## e.g. LandMine's Init compareGeom() -- see a non-NULL rstTimeSinceFire (this module
+    ## supersedes timeSinceFire, whose .inputObjects used to create it). fireSense supplies
+    ## flammableMap via the flammableRTM synonym in InitSingle, so this block is skipped
+    ## there (flammableMap not yet present) and InitSingle creates it as before.
+    if (is.null(sim$rstTimeSinceFire) && !is.null(sim[["flammableMap"]])) {
+      if (!is.null(sim$nonForest_timeSinceDisturbance)) {
+        sim$rstTimeSinceFire <- reproducible::postProcess(
+          sim$nonForest_timeSinceDisturbance,
+          to = sim$flammableMap
+        )
+      } else {
+        sim$rstTimeSinceFire <- LandR::prepInputsStandAgeMap(
+          dataSource = "SCANFI",
+          dataYear = P(sim)$dataYear,
+          ageFun = "terra::rast",
+          cropTo = sim$flammableMap,
+          maskTo = sim$flammableMap,
+          destinationPath = outputPath(sim)
+        )
+
+        ## non-flammable areas are permanent
+        sim$rstTimeSinceFire[sim$flammableMap[] == 0L] <- NA
+        sim$rstTimeSinceFire[] <- as.integer(sim$rstTimeSinceFire[])
+      }
+    }
   } else if (P(sim)$mode == "multi") {
     stopifnot(suppliedElsewhere("reportingPolygons", sim))
   }
