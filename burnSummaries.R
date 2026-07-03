@@ -7,13 +7,14 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.0.2.9002"),
+  version = list(burnSummaries = "1.0.2.9003"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("NEWS.md", "README.md", "burnSummaries.Rmd"),
   loadOrder = list(after = c("fireSense", "LandMine", "scfmSpread")),
-  reqdPkgs = list("archive", "data.table", "dplyr", "ggplot2", "ggspatial", "kSamples", "patchwork", "purrr",
+  reqdPkgs = list("archive", "data.table", "dplyr", "FOR-CAST/fireregimetools",
+                  "ggplot2", "ggspatial", "kSamples", "patchwork", "purrr",
                   "reproducible", "SpaDES.core", "stringr", "terra", "tidyterra"),
   parameters = bindrows(
     defineParameter("dataYear", "integer", 2020L, NA, NA,
@@ -156,6 +157,14 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
       data.table::fwrite(fs, file = ffs)
 
       sim <- registerOutputs(ffs, sim)
+
+      ## also publish as a parquet partition so multi mode reads all reps as one lazy Arrow dataset
+      ## (fireregimetools::open_burn_dataset) instead of rbind-ing per-rep CSVs into memory.
+      fireregimetools::write_burn_parquet(
+        as.data.frame(fs),
+        file.path(outputPath(sim), "burnSummaries_fireSizes"),
+        replicate = repID
+      )
     },
     summary = {
       sim <- FireSummaries(sim)
@@ -359,14 +368,15 @@ FireSummaries <- function(sim) {
 
   studyAreaName <- P(sim)$.studyAreaName
 
-  sim$fireSizes <- lapply(allReps, function(rep) {
-    f_fireSizes <- file.path(outputPath(sim), rep, "burnSummaries_fireSizes.csv")
-
-    stopifnot(file.exists(f_fireSizes))
-
-    data.table::fread(f_fireSizes)
-  }) |>
-    data.table::rbindlist()
+  ## read every replicate's fire-size parquet partition as one lazy Arrow dataset;
+  ## open_burn_dataset() skips reps with no fires / missing output rather than erroring.
+  roots <- file.path(outputPath(sim), allReps, "burnSummaries_fireSizes")
+  ds <- fireregimetools::open_burn_dataset(roots)
+  sim$fireSizes <- if (is.null(ds)) {
+    data.table::data.table()
+  } else {
+    data.table::as.data.table(dplyr::collect(ds))
+  }
 
   f_out <- file.path(outputPath(sim), paste0("burnSummaries_fireSizes_allReps.csv"))
   data.table::fwrite(sim$fireSizes, f_out)
@@ -432,114 +442,28 @@ plotFun <- function(sim) {
 
   if (isTRUE(fireModelUsesTargetSize)) {
     subsetDT[, expSizeHa := expSize * pixelSizeHa]
-    subsetDT[, logExpSize := log(expSize)]
-    subsetDT[, logExpSizeHa := log(expSize * pixelSizeHa)]
   }
 
   subsetDT[, simSizeHa := simSize * pixelSizeHa]
-  subsetDT[, logSimSize := log(simSize)]
-  subsetDT[, logSimSizeHa := log(simSize * pixelSizeHa)]
 
-  ## per Dave's original email:
-  ## > What I would like is both the number of disturbances on the y axis,
-  ## > and the area of disturbances on a second y-axis graph.
-  ## Per Eliot: x-axis uses same bins as histogram, with y-axis of median area burned per bin
-
-  if (isTRUE(fireModelUsesTargetSize)) {
-    maxLogExpSizeHa <- max(subsetDT$logExpSizeHa, na.rm = TRUE)
-    ## fmt: skip
-    breaks <- seq(0.0, ceiling(max(maxLogExpSizeHa, maxLogSimSizeHa, na.rm = TRUE) / 0.5) * 0.5, 0.5)
-    hexp <- hist(subsetDT$logExpSizeHa, breaks = breaks, plot = FALSE)
-    countsExp <- hexp$counts
-    subsetDT[, binIDexp := cut(logExpSizeHa, hexp$breaks)]
-    ## fmt: skip
-    summaryExpDT <- subsetDT[ , lapply(.SD, stats::median, na.rm = TRUE), by = binIDexp, .SDcols = "expSizeHa"]
-    data.table::setnames(summaryExpDT, "expSizeHa", "medExpSizeHa")
-    summaryExpDT <- summaryExpDT[, medLogExpSizeHa := log(medExpSizeHa)]
-
-    midsExp <- cbind(
-      as.numeric(sub("\\((.+),.*", "\\1", summaryExpDT$binIDexp)),
-      as.numeric(sub("[^,]*,([^]]*)\\]", "\\1", summaryExpDT$binIDexp))
-    ) |>
-      rowMeans()
-    summaryExpDT <- summaryExpDT[, midsExp := midsExp]
-    scaleFactorExp <- max(countsExp) / maxLogExpSizeHa
-  }
-
-  maxLogSimSizeHa <- max(subsetDT$logSimSizeHa, na.rm = TRUE)
-
-  breaks <- seq(0.0, ceiling(max(maxLogSimSizeHa, na.rm = TRUE) / 0.5) * 0.5, 0.5)
-  hsim <- hist(subsetDT$logSimSizeHa, breaks = breaks, plot = FALSE)
-  countsSim <- hsim$counts
-  subsetDT[, binIDsim := cut(logSimSizeHa, hsim$breaks)]
-  ## fmt: skip
-  summarySimDT <- subsetDT[, lapply(.SD, stats::median, na.rm = TRUE), by = binIDsim, .SDcols = "simSizeHa"]
-  data.table::setnames(summarySimDT, "simSizeHa", "medSimSizeHa")
-  summarySimDT <- summarySimDT[, medLogSimSizeHa := log(medSimSizeHa)]
-
-  midsSim <- cbind(
-    as.numeric(sub("\\((.+),.*", "\\1", summarySimDT$binIDsim)),
-    as.numeric(sub("[^,]*,([^]]*)\\]", "\\1", summarySimDT$binIDsim))
-  ) |>
-    rowMeans()
-  summarySimDT <- summarySimDT[, midsSim := midsSim]
-  scaleFactorSim <- max(countsSim) / maxLogSimSizeHa
-
-  y1col <- "grey20"
-  y2col <- "darkred"
-  y1lab <- "Total number of fires across all simulated years"
-  y2lab <- "Median log[fireSize] (ha)"
-  x_lab <- "log[fireSize] (ha)"
+  ## fire-size distribution (per Dave's email / Eliot): number of fires per log-size bin, with the
+  ## median log fire size per bin overlaid on a secondary axis. fireregimetools::fire_size_histogram()
+  ## takes raw sizes (ha) and logs internally, replacing the bespoke hist() + stat_summary_bin() code.
+  ggHistSim <- fireregimetools::fire_size_histogram(
+    subsetDT,
+    size_col = "simSizeHa",
+    size_unit = "ha",
+    title = paste("Total simulated number and size of fires in", studyAreaName)
+  )
 
   if (isTRUE(fireModelUsesTargetSize)) {
-    ggHistExp <- ggplot2::ggplot(subsetDT, ggplot2::aes(x = logExpSizeHa)) +
-      ggplot2::geom_histogram(breaks = breaks, alpha = 0.5, fill = y1col) +
-      ggplot2::stat_summary_bin(
-        data = summaryExpDT,
-        mapping = ggplot2::aes(x = midsExp, y = medLogExpSizeHa * scaleFactorExp),
-        fun = "identity",
-        geom = "point",
-        breaks = breaks,
-        col = y2col
-      ) +
-      ggplot2::scale_y_continuous(
-        y1lab,
-        sec.axis = ggplot2::sec_axis(~ . / scaleFactorExp, name = y2lab)
-      ) +
-      ggplot2::xlab(x_lab) +
-      ggplot2::ggtitle(paste("Total expected number and size of fires in", studyAreaName)) +
-      ggplot2::theme_bw() +
-      ggplot2::theme(
-        axis.title.y.left = ggplot2::element_text(color = y1col),
-        axis.text.y.left = ggplot2::element_text(color = y1col),
-        axis.title.y.right = ggplot2::element_text(color = y2col),
-        axis.text.y.right = ggplot2::element_text(color = y2col)
-      )
-  }
-
-  ggHistSim <- ggplot2::ggplot(subsetDT, ggplot2::aes(x = logSimSizeHa)) +
-    ggplot2::geom_histogram(breaks = breaks, alpha = 0.5, fill = y1col) +
-    ggplot2::stat_summary_bin(
-      data = summarySimDT,
-      mapping = aes(x = midsSim, y = medLogSimSizeHa * scaleFactorSim),
-      fun = "identity",
-      geom = "point",
-      breaks = breaks,
-      col = y2col
-    ) +
-    ggplot2::scale_y_continuous(
-      y1lab,
-      sec.axis = ggplot2::sec_axis(~ . / scaleFactorSim, name = y2lab)
-    ) +
-    ggplot2::xlab(x_lab) +
-    ggplot2::ggtitle(paste("Total simulated number and size of fires in", studyAreaName)) +
-    ggplot2::theme_bw() +
-    ggplot2::theme(
-      axis.title.y.left = ggplot2::element_text(color = y1col),
-      axis.text.y.left = ggplot2::element_text(color = y1col),
-      axis.title.y.right = ggplot2::element_text(color = y2col),
-      axis.text.y.right = ggplot2::element_text(color = y2col)
+    ggHistExp <- fireregimetools::fire_size_histogram(
+      subsetDT,
+      size_col = "expSizeHa",
+      size_unit = "ha",
+      title = paste("Total expected number and size of fires in", studyAreaName)
     )
+  }
 
   if ("png" %in% P(sim)$.plots) {
     if (isTRUE(fireModelUsesTargetSize)) {

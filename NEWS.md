@@ -1,5 +1,16 @@
 # burnSummaries (development version)
 
+## Fire-regime summaries via fireregimetools (`1.0.2.9003`)
+
+* Adopt the shared, arrow-native `FOR-CAST/fireregimetools` package for the fire-size summaries.
+  `create_fireSizes` now also publishes each replicate's fire-size table as a parquet partition
+  (`fireregimetools::write_burn_parquet`); `multi`-mode `FireSummaries` reads all replicates as one
+  lazy Arrow dataset (`fireregimetools::open_burn_dataset`) instead of `rbind`-ing the per-replicate
+  CSVs into memory; and the fire-size distribution plots (`ggHistSim` / `ggHistExp`) are drawn by
+  `fireregimetools::fire_size_histogram()` (count histogram with a median-log-size-per-bin overlay),
+  replacing the bespoke `hist()` + `stat_summary_bin()` dual-axis code. The per-replicate and
+  all-reps CSVs are still written. Adds `FOR-CAST/fireregimetools` to `reqdPkgs`.
+
 *NEWS was not maintained between the initial `0.0.1` module and the current development
 version (`1.0.2.9001`); this entry catches up the substantive changes over that window.*
 
