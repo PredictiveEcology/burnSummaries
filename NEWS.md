@@ -1,5 +1,12 @@
 # burnSummaries (development version)
 
+## Self-contained summary-output times (`1.0.2.9005`)
+
+* Inline the summary-output-times calculation (`seq()` over the summary period) instead of calling
+  `LandWebUtils::analysesOutputsTimes()`. burnSummaries is a generic module and does not declare
+  LandWebUtils; the bare call only resolved when a LandWeb module (e.g. NRV_summary) was co-run and
+  loaded it, so a standalone `mode = "multi"` run errored with `could not find function`.
+
 ## Observed fire perimeters from NBAC + NFDB backfill (`1.0.2.9004`)
 
 * The historical (observed) cumulative burn map now uses **National Burned Area Composite (NBAC)**

@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.0.2.9004"),
+  version = list(burnSummaries = "1.0.2.9005"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -94,8 +94,12 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
         stop("summaryPeriod values are outside the range of simulation times")
       }
 
+      ## summary output times = seq over the summary period (inlined so this generic
+      ## module does not depend on LandWebUtils::analysesOutputsTimes -- which is only
+      ## loaded when a LandWeb module like NRV_summary is co-run, not in standalone
+      ## mode="multi").
       mod$analysesOutputsTimes <- start(sim) +
-        analysesOutputsTimes(P(sim)$summaryPeriod, P(sim)$summaryInterval)
+        seq(P(sim)$summaryPeriod[1], P(sim)$summaryPeriod[2], by = P(sim)$summaryInterval)
 
       if (P(sim)$mode == "single") {
         sim <- InitSingle(sim)
