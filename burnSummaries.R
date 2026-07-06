@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.0.2.9005"),
+  version = list(burnSummaries = "1.0.2.9006"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -301,12 +301,30 @@ InitMulti <- function(sim) {
     dst <- inputPath(sim)
     fireYearsWanted <- 1900:2100 ## broad; the loaders filter to years actually present
 
+    ## Robust downloads for the large national archives: NBAC is ~1.2 GB and exceeds R's
+    ## default 60s `download.file` timeout, which silently truncates the zip. Raise the
+    ## timeout, and download to a `.part` file renamed only on success so a truncated /
+    ## interrupted download is not mistaken for a complete one on a later run.
+    old_timeout <- getOption("timeout")
+    options(timeout = max(3600L, old_timeout))
+    on.exit(options(timeout = old_timeout), add = TRUE)
+    download_once <- function(url, dest) {
+      if (file.exists(dest)) {
+        return(invisible(dest))
+      }
+      tmp <- paste0(dest, ".part")
+      ok <- FALSE
+      on.exit(if (!ok) unlink(tmp), add = TRUE) ## drop the partial unless the rename succeeds
+      utils::download.file(url, destfile = tmp, mode = "wb")
+      file.rename(tmp, dest)
+      ok <- TRUE
+      invisible(dest)
+    }
+
     ## NBAC composite ----------------------------------------------------------------
     nbac_url <- "https://cwfis.cfs.nrcan.gc.ca/downloads/nbac/NBAC_1972to2025_20260513_shp.zip"
     nbac_zip <- file.path(dst, basename(nbac_url))
-    if (!file.exists(nbac_zip)) {
-      download.file(nbac_url, destfile = nbac_zip, mode = "wb")
-    }
+    download_once(nbac_url, nbac_zip)
     nbac_shp <- fs::dir_ls(dst, regexp = "NBAC_.*[.]shp$")
     if (length(nbac_shp) == 0) {
       archive::archive_extract(nbac_zip, dst)
@@ -317,9 +335,7 @@ InitMulti <- function(sim) {
     ## NFDB polygons (backfill only) --------------------------------------------------
     nfdb_url <- "https://cwfis.cfs.nrcan.gc.ca/downloads/nfdb/fire_poly/current_version/NFDB_poly.zip"
     nfdb_zip <- file.path(dst, basename(nfdb_url))
-    if (!file.exists(nfdb_zip)) {
-      download.file(nfdb_url, destfile = nfdb_zip, mode = "wb")
-    }
+    download_once(nfdb_url, nfdb_zip)
     nfdb_shp <- fs::dir_ls(dst, regexp = "NFDB_poly_.*[.]shp$")
     if (length(nfdb_shp) == 0) {
       archive::archive_extract(nfdb_zip, dst)

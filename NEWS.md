@@ -1,5 +1,12 @@
 # burnSummaries (development version)
 
+## Robust downloads for the large NBAC/NFDB archives (`1.0.2.9006`)
+
+* Downloading the ~1.2 GB NBAC composite exceeded R's default 60 s `download.file` timeout, silently
+  truncating the zip (extraction then failed with `ZIP decompression failed`). Raise the timeout and
+  download to a `.part` file that is renamed only on success, so a truncated/interrupted download is
+  not mistaken for a complete one on a later run.
+
 ## Self-contained summary-output times (`1.0.2.9005`)
 
 * Inline the summary-output-times calculation (`seq()` over the summary period) instead of calling
