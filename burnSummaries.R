@@ -7,13 +7,13 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.0.2.9003"),
+  version = list(burnSummaries = "1.0.2.9004"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("NEWS.md", "README.md", "burnSummaries.Rmd"),
   loadOrder = list(after = c("fireSense", "LandMine", "scfmSpread")),
-  reqdPkgs = list("archive", "data.table", "dplyr", "FOR-CAST/fireregimetools",
+  reqdPkgs = list("archive", "data.table", "dplyr", "FOR-CAST/fireregimetools (>= 0.1.0)",
                   "ggplot2", "ggspatial", "kSamples", "patchwork", "purrr",
                   "reproducible", "SpaDES.core", "stringr", "terra", "tidyterra"),
   parameters = bindrows(
@@ -286,39 +286,56 @@ InitMulti <- function(sim) {
 
   meanAnnualCumulBurnMap <- burnMaps / length(allReps)
 
-  ## get NFDB fire polygons (TODO: use an updated/working prepInputs version)
-  message("preparing historical cumulative burn map using NFDB polygons...")
+  ## Observed fire perimeters: NBAC (National Burned Area Composite -- satellite-derived,
+  ## 1972-present, the preferred source) supplemented with NFDB polygons ONLY for years
+  ## NBAC does not cover. Older NFDB perimeters are aerial sketches that overestimate
+  ## burned area, so NBAC is authoritative wherever it exists. Both are national CWFIS
+  ## downloads, harmonised (tolerant YEAR/SIZE_HA columns) + clipped to the sim grid via
+  ## fireregimetools::load_nbac_polys() / load_nfdb_polys().
+  message("preparing historical cumulative burn map using NBAC perimeters (+ NFDB backfill)...")
   firePolys <- {
     dst <- inputPath(sim)
+    fireYearsWanted <- 1900:2100 ## broad; the loaders filter to years actually present
+
+    ## NBAC composite ----------------------------------------------------------------
+    nbac_url <- "https://cwfis.cfs.nrcan.gc.ca/downloads/nbac/NBAC_1972to2025_20260513_shp.zip"
+    nbac_zip <- file.path(dst, basename(nbac_url))
+    if (!file.exists(nbac_zip)) {
+      download.file(nbac_url, destfile = nbac_zip, mode = "wb")
+    }
+    nbac_shp <- fs::dir_ls(dst, regexp = "NBAC_.*[.]shp$")
+    if (length(nbac_shp) == 0) {
+      archive::archive_extract(nbac_zip, dst)
+      nbac_shp <- fs::dir_ls(dst, regexp = "NBAC_.*[.]shp$")
+    }
+    nbac <- fireregimetools::load_nbac_polys(nbac_shp[[1]], flammableMap, fireYearsWanted)
+
+    ## NFDB polygons (backfill only) --------------------------------------------------
     nfdb_url <- "https://cwfis.cfs.nrcan.gc.ca/downloads/nfdb/fire_poly/current_version/NFDB_poly.zip"
     nfdb_zip <- file.path(dst, basename(nfdb_url))
-
     if (!file.exists(nfdb_zip)) {
-      download.file(nfdb_url, destfile = nfdb_zip)
+      download.file(nfdb_url, destfile = nfdb_zip, mode = "wb")
     }
-
-    all_nfdb_files <- fs::dir_ls(dst, regexp = "NFDB_poly_(1972to2020|2021to2024).*")
-
-    if (length(all_nfdb_files) != 16) {
+    nfdb_shp <- fs::dir_ls(dst, regexp = "NFDB_poly_.*[.]shp$")
+    if (length(nfdb_shp) == 0) {
       archive::archive_extract(nfdb_zip, dst)
+      nfdb_shp <- fs::dir_ls(dst, regexp = "NFDB_poly_.*[.]shp$")
     }
+    nfdb <- fireregimetools::load_nfdb_polys(nfdb_shp, flammableMap, fireYearsWanted)
 
-    nfdb_shp <- fs::dir_ls(dst, regexp = "NFDB_poly_(1972to2020|2021to2024).*[.]shp$")
-
-    purrr::map(.x = nfdb_shp, .f = function(x) {
-      p <- terra::vect(x)
-
-      ## NOTE: terra::makeValid takes so long;
-      ## just drop the tiny number of invalid geometries
-      p[terra::is.valid(p), ]
-    }) |>
-      tidyterra::bind_spat_rows() |>
-      tidyterra::mutate(
-        YEAR = as.integer(YEAR),
-        MONTH = as.integer(MONTH),
-        DAY = as.integer(DAY)
-      ) |>
-      terra::project(flammableMap)
+    ## NBAC is authoritative; add NFDB polygons only for the years NBAC does not cover.
+    nbacYears <- sort(unique(nbac$YEAR))
+    backfill <- tidyterra::filter(nfdb, !(YEAR %in% !!nbacYears))
+    if (nrow(backfill) > 0) {
+      message(sprintf(
+        "  NBAC covers %d-%d; backfilling %d NFDB-only year(s): %s",
+        min(nbacYears), max(nbacYears), length(unique(backfill$YEAR)),
+        paste(sort(unique(backfill$YEAR)), collapse = ", ")
+      ))
+      tidyterra::bind_spat_rows(nbac[, "YEAR"], backfill[, "YEAR"])
+    } else {
+      nbac[, "YEAR"]
+    }
   }
 
   fireYears <- tidyterra::filter(firePolys, YEAR > 0) |> dplyr::pull("YEAR") |> unique() |> sort()

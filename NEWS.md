@@ -1,5 +1,15 @@
 # burnSummaries (development version)
 
+## Observed fire perimeters from NBAC + NFDB backfill (`1.0.2.9004`)
+
+* The historical (observed) cumulative burn map now uses **National Burned Area Composite (NBAC)**
+  perimeters (satellite-derived, 1972-present) as the authoritative source, supplemented with
+  **National Fire DataBase (NFDB)** polygons ONLY for years NBAC does not cover. Older NFDB
+  perimeters are aerial sketches that overestimate burned area, so NBAC is preferred wherever it
+  exists. Loading + harmonising (tolerant `YEAR`/`SIZE_HA` columns, clipped to the sim grid) is done
+  via `fireregimetools::load_nbac_polys()` / `load_nfdb_polys()` (>= 0.1.0), replacing the former
+  NFDB-only historical burn map.
+
 ## Fire-regime summaries via fireregimetools (`1.0.2.9003`)
 
 * Adopt the shared, arrow-native `FOR-CAST/fireregimetools` package for the fire-size summaries.
