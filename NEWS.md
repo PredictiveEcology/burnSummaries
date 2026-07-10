@@ -1,5 +1,14 @@
 # burnSummaries (development version)
 
+## Reuse the cached stand-age input across replicates (`1.0.2.9007`)
+
+* `.inputObjects` now downloads/reads the SCANFI stand-age source used to seed `rstTimeSinceFire`
+  into `inputPath(sim)` (the shared inputs cache) instead of the per-replicate `outputPath(sim)`.
+  Previously every replicate re-downloaded the ~5.2 GB SCANFI age file to its own output directory,
+  so a multi-replicate mainSim launched many simultaneous large downloads; one dropped its
+  connection and, with the headless no-retry guard, failed the whole run. Pointing at the shared
+  inputs path reuses the already-cached file (no re-download).
+
 ## Robust downloads for the large NBAC/NFDB archives (`1.0.2.9006`)
 
 * Downloading the ~1.2 GB NBAC composite exceeded R's default 60 s `download.file` timeout, silently

@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.0.2.9006"),
+  version = list(burnSummaries = "1.0.2.9007"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -233,7 +233,7 @@ InitSingle <- function(sim) {
         ageFun = "terra::rast",
         cropTo = sim$flammableMap,
         maskTo = sim$flammableMap,
-        destinationPath = outputPath(sim)
+        destinationPath = inputPath(sim)
       )
 
       ## non-flammable areas are permanent
@@ -593,7 +593,7 @@ plotFun <- function(sim) {
           dataYear = P(sim)$dataYear,
           ageFun = "terra::rast",
           maskWithRTM = TRUE,
-          destinationPath = outputPath(sim)
+          destinationPath = inputPath(sim)
         )
 
         ## non-flammable areas are permanent
