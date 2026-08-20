@@ -7,13 +7,17 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.0.2.9007"),
+  version = list(burnSummaries = "1.0.2.9008"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("NEWS.md", "README.md", "burnSummaries.Rmd"),
   loadOrder = list(after = c("fireSense", "LandMine", "scfmSpread")),
+  ## workflowtools >= 0.0.16: archive_extract_once() verifies extracted files against the archive
+  ## manifest's sizes instead of merely checking existence (a truncated extraction used to be
+  ## silently reused forever). Earlier versions reintroduce that failure.
   reqdPkgs = list("archive", "data.table", "dplyr", "FOR-CAST/fireregimetools (>= 0.1.0)",
+                  "FOR-CAST/workflowtools (>= 0.0.16)",
                   "ggplot2", "ggspatial", "kSamples", "patchwork", "purrr",
                   "reproducible", "SpaDES.core", "stringr", "terra", "tidyterra"),
   parameters = bindrows(
@@ -325,22 +329,23 @@ InitMulti <- function(sim) {
     nbac_url <- "https://cwfis.cfs.nrcan.gc.ca/downloads/nbac/NBAC_1972to2025_20260513_shp.zip"
     nbac_zip <- file.path(dst, basename(nbac_url))
     download_once(nbac_url, nbac_zip)
+    ## workflowtools::archive_extract_once() (>= 0.0.16), NOT a bare "does a .shp exist?" test:
+    ## an interrupted extraction leaves a SHORT file behind, and an existence-only guard then treats
+    ## that stub as extracted on every later run, permanently and silently. That happened here -- the
+    ## 1.88 GB NBAC .shp sat at 567 MB, GDAL logged 74,178 read errors, and sf::st_read() still
+    ## returned the full feature count (the .shx index was intact), so the historic fire summaries
+    ## were built from ~30% of the record with nothing failing. The helper compares each file against
+    ## the archive manifest's recorded size and errors if extraction leaves anything short.
+    workflowtools::archive_extract_once(nbac_zip, dst)
     nbac_shp <- fs::dir_ls(dst, regexp = "NBAC_.*[.]shp$")
-    if (length(nbac_shp) == 0) {
-      archive::archive_extract(nbac_zip, dst)
-      nbac_shp <- fs::dir_ls(dst, regexp = "NBAC_.*[.]shp$")
-    }
     nbac <- fireregimetools::load_nbac_polys(nbac_shp[[1]], flammableMap, fireYearsWanted)
 
     ## NFDB polygons (backfill only) --------------------------------------------------
     nfdb_url <- "https://cwfis.cfs.nrcan.gc.ca/downloads/nfdb/fire_poly/current_version/NFDB_poly.zip"
     nfdb_zip <- file.path(dst, basename(nfdb_url))
     download_once(nfdb_url, nfdb_zip)
+    workflowtools::archive_extract_once(nfdb_zip, dst)
     nfdb_shp <- fs::dir_ls(dst, regexp = "NFDB_poly_.*[.]shp$")
-    if (length(nfdb_shp) == 0) {
-      archive::archive_extract(nfdb_zip, dst)
-      nfdb_shp <- fs::dir_ls(dst, regexp = "NFDB_poly_.*[.]shp$")
-    }
     nfdb <- fireregimetools::load_nfdb_polys(nfdb_shp, flammableMap, fireYearsWanted)
 
     ## NBAC is authoritative; add NFDB polygons only for the years NBAC does not cover.
