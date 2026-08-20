@@ -71,6 +71,7 @@ jobs:
             any::animation
             any::bookdown
             any::dplyr
+            any::git2r
             any::kableExtra
             any::knitr
             any::openxlsx
@@ -78,6 +79,7 @@ jobs:
             any::pander
             any::rmarkdown
             github::PredictiveEcology/SpaDES.core@development
+            github::PredictiveEcology/SpaDES.docs@development
 
       - name: Install module reqdPkgs
         run: |
