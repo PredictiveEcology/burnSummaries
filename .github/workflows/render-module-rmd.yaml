@@ -35,6 +35,7 @@ jobs:
             libgit2-dev \
             libglpk-dev \
             libmagick++-dev \
+            libuv1-dev \
             libxml2-dev \
             python3-gdal
 
