@@ -97,6 +97,14 @@ jobs:
           refs <- sub("\\s*\\(.*\\)\\s*$", "", trimws(specs))
           refs <- unique(refs[nzchar(refs)])
 
+          ## Bare names in `reqdPkgs` ("SpaDES.core", "reproducible") name packages whose
+          ## DEVELOPMENT versions were already installed above, from GitHub. Handing pak the bare
+          ## name makes it resolve to CRAN and then refuse -- "Conflicts with reproducible",
+          ## "Can't find package called SpaDES.core" -- and the entire solve fails, reporting
+          ## every other package as a "dependency conflict". So: always keep a GitHub ref (it
+          ## carries org/repo), and keep a bare name only when nothing by that name is installed.
+          refs <- refs[grepl("/", refs) | !(refs %in% rownames(installed.packages()))]
+
           cat("::group::module reqdPkgs\n"); cat(refs, sep = "\n"); cat("\n::endgroup::\n")
           pak::pkg_install(refs, ask = FALSE)
         shell: Rscript {0}
