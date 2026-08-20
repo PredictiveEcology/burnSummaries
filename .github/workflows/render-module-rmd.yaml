@@ -74,12 +74,27 @@ jobs:
             any::git2r
             any::kableExtra
             any::knitr
+            any::modelr
             any::openxlsx
             any::pak
             any::pander
             any::rmarkdown
+            any::stringi
             github::PredictiveEcology/SpaDES.core@development
-            github::PredictiveEcology/SpaDES.docs@development
+
+      - name: Install SpaDES.docs
+        run: |
+          ## Installed on its own, with dependencies = FALSE, because SpaDES.docs' DESCRIPTION
+          ## declares a BRANCHLESS `Remotes: PredictiveEcology/Require` while SpaDES.core@development
+          ## requires `PredictiveEcology/Require@development`. Resolved in the same pass, pak
+          ## refuses -- "PredictiveEcology/Require@development conflicts with
+          ## PredictiveEcology/Require, to be installed" -- and reports every other package as a
+          ## dependency conflict. Its imports (data.table, knitr, kableExtra, modelr, pander,
+          ## Require, stringi) are all installed by the step above, so skipping dependency
+          ## resolution here is safe.
+          pak::pkg_install("PredictiveEcology/SpaDES.docs@development",
+                           dependencies = FALSE, ask = FALSE)
+        shell: Rscript {0}
 
       - name: Install module reqdPkgs
         run: |
