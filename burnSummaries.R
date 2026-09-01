@@ -7,17 +7,19 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.0.2.9008"),
+  version = list(burnSummaries = "1.0.2.9009"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("NEWS.md", "README.md", "burnSummaries.Rmd"),
   loadOrder = list(after = c("fireSense", "LandMine", "scfmSpread")),
-  ## workflowtools >= 0.0.16: archive_extract_once() verifies extracted files against the archive
+  ## fireregimetools >= 0.1.0.9003: fetch_nbac_polys()/fetch_nfdb_polys() acquire the national fire
+  ## archives with a raised download timeout and verify each extraction against the archive
   ## manifest's sizes instead of merely checking existence (a truncated extraction used to be
-  ## silently reused forever). Earlier versions reintroduce that failure.
-  reqdPkgs = list("archive", "data.table", "dplyr", "FOR-CAST/fireregimetools (>= 0.1.0)",
-                  "FOR-CAST/workflowtools (>= 0.0.16)",
+  ## silently reused forever). Earlier versions lack the fetchers. `archive` is not called here, but
+  ## fireregimetools uses libarchive for extraction when it is installed, which handles the zip64
+  ## archives R's internal unzip cannot -- so keep it available.
+  reqdPkgs = list("archive", "data.table", "dplyr", "FOR-CAST/fireregimetools (>= 0.1.0.9003)",
                   "ggplot2", "ggspatial", "kSamples", "patchwork", "purrr",
                   "reproducible", "SpaDES.core", "stringr", "terra", "tidyterra"),
   parameters = bindrows(
@@ -299,54 +301,21 @@ InitMulti <- function(sim) {
   ## NBAC does not cover. Older NFDB perimeters are aerial sketches that overestimate
   ## burned area, so NBAC is authoritative wherever it exists. Both are national CWFIS
   ## downloads, harmonised (tolerant YEAR/SIZE_HA columns) + clipped to the sim grid via
-  ## fireregimetools::load_nbac_polys() / load_nfdb_polys().
+  ## fireregimetools::fetch_nbac_polys() / fetch_nfdb_polys().
   message("preparing historical cumulative burn map using NBAC perimeters (+ NFDB backfill)...")
   firePolys <- {
     dst <- inputPath(sim)
-    fireYearsWanted <- 1900:2100 ## broad; the loaders filter to years actually present
 
-    ## Robust downloads for the large national archives: NBAC is ~1.2 GB and exceeds R's
-    ## default 60s `download.file` timeout, which silently truncates the zip. Raise the
-    ## timeout, and download to a `.part` file renamed only on success so a truncated /
-    ## interrupted download is not mistaken for a complete one on a later run.
-    old_timeout <- getOption("timeout")
-    options(timeout = max(3600L, old_timeout))
-    on.exit(options(timeout = old_timeout), add = TRUE)
-    download_once <- function(url, dest) {
-      if (file.exists(dest)) {
-        return(invisible(dest))
-      }
-      tmp <- paste0(dest, ".part")
-      ok <- FALSE
-      on.exit(if (!ok) unlink(tmp), add = TRUE) ## drop the partial unless the rename succeeds
-      utils::download.file(url, destfile = tmp, mode = "wb")
-      file.rename(tmp, dest)
-      ok <- TRUE
-      invisible(dest)
-    }
-
-    ## NBAC composite ----------------------------------------------------------------
-    nbac_url <- "https://cwfis.cfs.nrcan.gc.ca/downloads/nbac/NBAC_1972to2025_20260513_shp.zip"
-    nbac_zip <- file.path(dst, basename(nbac_url))
-    download_once(nbac_url, nbac_zip)
-    ## workflowtools::archive_extract_once() (>= 0.0.16), NOT a bare "does a .shp exist?" test:
-    ## an interrupted extraction leaves a SHORT file behind, and an existence-only guard then treats
-    ## that stub as extracted on every later run, permanently and silently. That happened here -- the
-    ## 1.88 GB NBAC .shp sat at 567 MB, GDAL logged 74,178 read errors, and sf::st_read() still
-    ## returned the full feature count (the .shx index was intact), so the historic fire summaries
-    ## were built from ~30% of the record with nothing failing. The helper compares each file against
-    ## the archive manifest's recorded size and errors if extraction leaves anything short.
-    workflowtools::archive_extract_once(nbac_zip, dst)
-    nbac_shp <- fs::dir_ls(dst, regexp = "NBAC_.*[.]shp$")
-    nbac <- fireregimetools::load_nbac_polys(nbac_shp[[1]], flammableMap, fireYearsWanted)
-
-    ## NFDB polygons (backfill only) --------------------------------------------------
-    nfdb_url <- "https://cwfis.cfs.nrcan.gc.ca/downloads/nfdb/fire_poly/current_version/NFDB_poly.zip"
-    nfdb_zip <- file.path(dst, basename(nfdb_url))
-    download_once(nfdb_url, nfdb_zip)
-    workflowtools::archive_extract_once(nfdb_zip, dst)
-    nfdb_shp <- fs::dir_ls(dst, regexp = "NFDB_poly_.*[.]shp$")
-    nfdb <- fireregimetools::load_nfdb_polys(nfdb_shp, flammableMap, fireYearsWanted)
+    ## fireregimetools fetches + harmonises both archives: each is downloaded once per `dest`
+    ## (with R's 60 s timeout raised -- it silently truncates a 1.2 GB transfer -- and staged
+    ## through a `.part` file), and an extraction is verified file-by-file against the archive
+    ## manifest before it is reused. That guard is not optional here: an interrupted extraction
+    ## left the 1.88 GB NBAC .shp at 567 MB, GDAL logged 74,178 read errors, and sf::st_read()
+    ## still returned the full feature count (the .shx index was intact), so these historic
+    ## summaries were once built from ~30% of the record with nothing failing.
+    ## fire_years is left at its default (NULL): keep every year the records contain.
+    nbac <- fireregimetools::fetch_nbac_polys(flammableMap, dest = dst)
+    nfdb <- fireregimetools::fetch_nfdb_polys(flammableMap, dest = dst)
 
     ## NBAC is authoritative; add NFDB polygons only for the years NBAC does not cover.
     nbacYears <- sort(unique(nbac$YEAR))

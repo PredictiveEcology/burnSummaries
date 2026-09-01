@@ -1,5 +1,16 @@
 # burnSummaries (development version)
 
+## Fetch the NBAC/NFDB archives via fireregimetools (`1.0.2.9009`)
+
+* The hand-rolled download + extract block for the national fire archives is replaced by
+  `fireregimetools::fetch_nbac_polys()` / `fetch_nfdb_polys()` (>= 0.1.0.9003), which carry the same
+  protections this module had to grow on its own -- raised download timeout, `.part` staging, and
+  extraction verified against the archive manifest rather than a bare existence check -- plus two the
+  module lacked: a truncated cached archive is re-downloaded instead of re-extracted, and concurrent
+  workers sharing an inputs directory coordinate via a lock rather than each pulling their own copy.
+* `FOR-CAST/workflowtools` drops out of `reqdPkgs` (its `archive_extract_once()` is no longer called
+  here). `archive` stays: fireregimetools uses libarchive for extraction when it is installed.
+
 ## Reuse the cached stand-age input across replicates (`1.0.2.9007`)
 
 * `.inputObjects` now downloads/reads the SCANFI stand-age source used to seed `rstTimeSinceFire`
