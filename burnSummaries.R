@@ -7,15 +7,24 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.0.2.9001"),
+  version = list(burnSummaries = "1.0.2.9009"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("NEWS.md", "README.md", "burnSummaries.Rmd"),
   loadOrder = list(after = c("fireSense", "LandMine", "scfmSpread")),
-  reqdPkgs = list("archive", "data.table", "dplyr", "ggplot2", "ggspatial", "kSamples", "patchwork", "purrr",
+  ## fireregimetools >= 0.1.0.9003: fetch_nbac_polys()/fetch_nfdb_polys() acquire the national fire
+  ## archives with a raised download timeout and verify each extraction against the archive
+  ## manifest's sizes instead of merely checking existence (a truncated extraction used to be
+  ## silently reused forever). Earlier versions lack the fetchers. `archive` is not called here, but
+  ## fireregimetools uses libarchive for extraction when it is installed, which handles the zip64
+  ## archives R's internal unzip cannot -- so keep it available.
+  reqdPkgs = list("archive", "data.table", "dplyr", "FOR-CAST/fireregimetools (>= 0.1.0.9003)",
+                  "ggplot2", "ggspatial", "kSamples", "patchwork", "purrr",
                   "reproducible", "SpaDES.core", "stringr", "terra", "tidyterra"),
   parameters = bindrows(
+    defineParameter("dataYear", "integer", 2020L, NA, NA,
+                    "data year for the SCANFI stand-age inputs used to seed rstTimeSinceFire (single mode)"),
     defineParameter("fireTimestep", "integer", 1L, NA, NA,
                     "simulation time interval between burn events"),
     defineParameter("mode", "character", "single", NA, NA,
@@ -98,8 +107,12 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
         stop("summaryPeriod values are outside the range of simulation times")
       }
 
-      mod$analysesOutputsTimes <- # start(sim) +
-        LandWebUtils::analysesOutputsTimes(P(sim)$summaryPeriod, P(sim)$summaryInterval)
+      ## summary output times = seq over the summary period (inlined so this generic
+      ## module does not depend on LandWebUtils::analysesOutputsTimes -- which is only
+      ## loaded when a LandWeb module like NRV_summary is co-run, not in standalone
+      ## mode="multi").
+      mod$analysesOutputsTimes <- start(sim) +
+        seq(P(sim)$summaryPeriod[1], P(sim)$summaryPeriod[2], by = P(sim)$summaryInterval)
 
       if (P(sim)$mode == "single") {
         sim <- InitSingle(sim)
@@ -162,6 +175,14 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
       data.table::fwrite(fs, file = ffs)
 
       sim <- registerOutputs(ffs, sim)
+
+      ## also publish as a parquet partition so multi mode reads all reps as one lazy Arrow dataset
+      ## (fireregimetools::open_burn_dataset) instead of rbind-ing per-rep CSVs into memory.
+      fireregimetools::write_burn_parquet(
+        as.data.frame(fs),
+        file.path(outputPath(sim), "burnSummaries_fireSizes"),
+        replicate = repID
+      )
     },
     summary = {
       sim <- FireSummaries(sim)
@@ -226,7 +247,7 @@ InitSingle <- function(sim) {
         ageFun = "terra::rast",
         cropTo = sim$flammableMap,
         maskTo = sim$flammableMap,
-        destinationPath = outputPath(sim)
+        destinationPath = inputPath(sim)
       )
 
       ## non-flammable areas are permanent
@@ -312,49 +333,44 @@ InitMulti <- function(sim) {
 
   meanAnnualCumulBurnMap <- burnMaps / length(mod$allReps)
 
-  ## get NFDB fire polygons (TODO: use an updated/working prepInputs version)
-  message("preparing historical cumulative burn map using NFDB polygons...")
-  if (exists("firePolys", envir(sim))) {
-    # firePolys <- Map(fp = sims[[1]]$firePolys, function(fp) .unwrap(fp))
-    firePolys <- sim$firePolys |> tidyterra::bind_spat_rows() |>
-      tidyterra::mutate(
-        YEAR = as.integer(YEAR)#,
-        #MONTH = as.integer(MONTH),
-        #DAY = as.integer(DAY)
-      )
+  firePolys <- if (exists("firePolys", envir(sim))) {
+    ## polygons supplied on the simList: use them rather than re-fetching
+    sim$firePolys |>
+      tidyterra::bind_spat_rows() |>
+      tidyterra::mutate(YEAR = as.integer(YEAR))
   } else {
-    firePolys <- {
-      dst <- inputPath(sim)
-      nfdb_url <- "https://cwfis.cfs.nrcan.gc.ca/downloads/nfdb/fire_poly/current_version/NFDB_poly.zip"
-      nfdb_zip <- file.path(dst, basename(nfdb_url))
-      
-      if (!file.exists(nfdb_zip)) {
-        download.file(nfdb_url, destfile = nfdb_zip)
-      }
-      
-      all_nfdb_files <- fs::dir_ls(dst, regexp = "NFDB_poly_(1972to2020|2021to2024).*")
-      
-      if (length(all_nfdb_files) != 16) {
-        archive::archive_extract(nfdb_zip, dst)
-      }
-      
-      nfdb_shp <- fs::dir_ls(dst, regexp = "NFDB_poly_(1972to2020|2021to2024).*[.]shp$")
-      
-      purrr::map(.x = nfdb_shp, .f = function(x) {
-        p <- terra::vect(x)
-        
-        ## NOTE: terra::makeValid takes so long;
-        ## just drop the tiny number of invalid geometries
-        p[terra::is.valid(p), ]
-      }) |>
-        tidyterra::bind_spat_rows() |>
-        tidyterra::mutate(
-          YEAR = as.integer(YEAR),
-          MONTH = as.integer(MONTH),
-          DAY = as.integer(DAY)
-        ) |>
-        terra::project(flammableMap)
-    }
+  ## Observed fire perimeters: NBAC (National Burned Area Composite -- satellite-derived,
+  ## 1972-present, the preferred source) supplemented with NFDB polygons ONLY for years
+  ## NBAC does not cover. Older NFDB perimeters are aerial sketches that overestimate
+  ## burned area, so NBAC is authoritative wherever it exists. Both are national CWFIS
+  ## downloads, harmonised (tolerant YEAR/SIZE_HA columns) + clipped to the sim grid via
+  ## fireregimetools::fetch_nbac_polys() / fetch_nfdb_polys().
+  message("preparing historical cumulative burn map using NBAC perimeters (+ NFDB backfill)...")
+    dst <- inputPath(sim)
+
+    ## fireregimetools fetches + harmonises both archives: each is downloaded once per `dest`
+    ## (with R's 60 s timeout raised -- it silently truncates a 1.2 GB transfer -- and staged
+    ## through a `.part` file), and an extraction is verified file-by-file against the archive
+    ## manifest before it is reused. That guard is not optional here: an interrupted extraction
+    ## left the 1.88 GB NBAC .shp at 567 MB, GDAL logged 74,178 read errors, and sf::st_read()
+    ## still returned the full feature count (the .shx index was intact), so these historic
+    ## summaries were once built from ~30% of the record with nothing failing.
+    ## fire_years is left at its default (NULL): keep every year the records contain.
+    nbac <- fireregimetools::fetch_nbac_polys(flammableMap, dest = dst)
+    nfdb <- fireregimetools::fetch_nfdb_polys(flammableMap, dest = dst)
+
+    ## NBAC is authoritative; add NFDB polygons only for the years NBAC does not cover.
+    nbacYears <- sort(unique(nbac$YEAR))
+    backfill <- tidyterra::filter(nfdb, !(YEAR %in% !!nbacYears))
+    if (nrow(backfill) > 0) {
+      message(sprintf(
+        "  NBAC covers %d-%d; backfilling %d NFDB-only year(s): %s",
+        min(nbacYears), max(nbacYears), length(unique(backfill$YEAR)),
+        paste(sort(unique(backfill$YEAR)), collapse = ", ")
+      ))
+      tidyterra::bind_spat_rows(nbac[, "YEAR"], backfill[, "YEAR"])
+    } else {
+      nbac[, "YEAR"]    }
   }
 
   fireYears <- tidyterra::filter(firePolys, YEAR > 0) |> dplyr::pull("YEAR") |> unique() |> sort()
@@ -404,19 +420,28 @@ FireSummaries <- function(sim) {
 
   studyAreaName <- P(sim)$.studyAreaName
 
-  sim$fireSizes <- lapply(mod$allReps, function(rep) {
-    if (mod$useOutputs) {
+  if (mod$useOutputs) {
+    ## registerOutputs() records the CSV; the parquet partition is not registered, so
+    ## outputs(sim) is what drives this arm.
+    sim$fireSizes <- lapply(mod$allReps, function(rep) {
       f_fireSizes <- grep(paste0(rep, ".+burnSummaries_fireSizes.csv"), sim$outputsDF$file, value = TRUE)
       f_fireSizes <- fs::path_rel(f_fireSizes)
-    } else {
-      f_fireSizes <- file.path(outputPath(sim), rep, "burnSummaries_fireSizes.csv")
-    }
-    stopifnot(file.exists(f_fireSizes))
+      stopifnot(file.exists(f_fireSizes))
 
-    data.table::fread(f_fireSizes)
-  }) |>
-    data.table::rbindlist()
-  
+      data.table::fread(f_fireSizes)
+    }) |>
+      data.table::rbindlist()
+  } else {
+    ## read every replicate's fire-size parquet partition as one lazy Arrow dataset;
+    ## open_burn_dataset() skips reps with no fires / missing output rather than erroring.
+    roots <- file.path(outputPath(sim), mod$allReps, "burnSummaries_fireSizes")
+    ds <- fireregimetools::open_burn_dataset(roots)
+    sim$fireSizes <- if (is.null(ds)) {
+      data.table::data.table()
+    } else {
+      data.table::as.data.table(dplyr::collect(ds))
+    }
+  }
   f_out <- file.path(outputPath(sim), paste0("burnSummaries_fireSizes_allReps.csv"))
   data.table::fwrite(sim$fireSizes, f_out)
 
@@ -481,114 +506,28 @@ plotFun <- function(sim) {
 
   if (isTRUE(fireModelUsesTargetSize)) {
     subsetDT[, expSizeHa := expSize * pixelSizeHa]
-    subsetDT[, logExpSize := log(expSize)]
-    subsetDT[, logExpSizeHa := log(expSize * pixelSizeHa)]
   }
 
   subsetDT[, simSizeHa := simSize * pixelSizeHa]
-  subsetDT[, logSimSize := log(simSize)]
-  subsetDT[, logSimSizeHa := log(simSize * pixelSizeHa)]
 
-  ## per Dave's original email:
-  ## > What I would like is both the number of disturbances on the y axis,
-  ## > and the area of disturbances on a second y-axis graph.
-  ## Per Eliot: x-axis uses same bins as histogram, with y-axis of median area burned per bin
-
-  if (isTRUE(fireModelUsesTargetSize)) {
-    maxLogExpSizeHa <- max(subsetDT$logExpSizeHa, na.rm = TRUE)
-    ## fmt: skip
-    breaks <- seq(0.0, ceiling(max(maxLogExpSizeHa, maxLogSimSizeHa, na.rm = TRUE) / 0.5) * 0.5, 0.5)
-    hexp <- hist(subsetDT$logExpSizeHa, breaks = breaks, plot = FALSE)
-    countsExp <- hexp$counts
-    subsetDT[, binIDexp := cut(logExpSizeHa, hexp$breaks)]
-    ## fmt: skip
-    summaryExpDT <- subsetDT[ , lapply(.SD, stats::median, na.rm = TRUE), by = binIDexp, .SDcols = "expSizeHa"]
-    data.table::setnames(summaryExpDT, "expSizeHa", "medExpSizeHa")
-    summaryExpDT <- summaryExpDT[, medLogExpSizeHa := log(medExpSizeHa)]
-
-    midsExp <- cbind(
-      as.numeric(sub("\\((.+),.*", "\\1", summaryExpDT$binIDexp)),
-      as.numeric(sub("[^,]*,([^]]*)\\]", "\\1", summaryExpDT$binIDexp))
-    ) |>
-      rowMeans()
-    summaryExpDT <- summaryExpDT[, midsExp := midsExp]
-    scaleFactorExp <- max(countsExp) / maxLogExpSizeHa
-  }
-
-  maxLogSimSizeHa <- max(subsetDT$logSimSizeHa, na.rm = TRUE)
-
-  breaks <- seq(0.0, ceiling(max(maxLogSimSizeHa, na.rm = TRUE) / 0.5) * 0.5, 0.5)
-  hsim <- hist(subsetDT$logSimSizeHa, breaks = breaks, plot = FALSE)
-  countsSim <- hsim$counts
-  subsetDT[, binIDsim := cut(logSimSizeHa, hsim$breaks)]
-  ## fmt: skip
-  summarySimDT <- subsetDT[, lapply(.SD, stats::median, na.rm = TRUE), by = binIDsim, .SDcols = "simSizeHa"]
-  data.table::setnames(summarySimDT, "simSizeHa", "medSimSizeHa")
-  summarySimDT <- summarySimDT[, medLogSimSizeHa := log(medSimSizeHa)]
-
-  midsSim <- cbind(
-    as.numeric(sub("\\((.+),.*", "\\1", summarySimDT$binIDsim)),
-    as.numeric(sub("[^,]*,([^]]*)\\]", "\\1", summarySimDT$binIDsim))
-  ) |>
-    rowMeans()
-  summarySimDT <- summarySimDT[, midsSim := midsSim]
-  scaleFactorSim <- max(countsSim) / maxLogSimSizeHa
-
-  y1col <- "grey20"
-  y2col <- "darkred"
-  y1lab <- "Total number of fires across all simulated years"
-  y2lab <- "Median log[fireSize] (ha)"
-  x_lab <- "log[fireSize] (ha)"
+  ## fire-size distribution (per Dave's email / Eliot): number of fires per log-size bin, with the
+  ## median log fire size per bin overlaid on a secondary axis. fireregimetools::fire_size_histogram()
+  ## takes raw sizes (ha) and logs internally, replacing the bespoke hist() + stat_summary_bin() code.
+  ggHistSim <- fireregimetools::fire_size_histogram(
+    subsetDT,
+    size_col = "simSizeHa",
+    size_unit = "ha",
+    title = paste("Total simulated number and size of fires in", studyAreaName)
+  )
 
   if (isTRUE(fireModelUsesTargetSize)) {
-    ggHistExp <- ggplot2::ggplot(subsetDT, ggplot2::aes(x = logExpSizeHa)) +
-      ggplot2::geom_histogram(breaks = breaks, alpha = 0.5, fill = y1col) +
-      ggplot2::stat_summary_bin(
-        data = summaryExpDT,
-        mapping = ggplot2::aes(x = midsExp, y = medLogExpSizeHa * scaleFactorExp),
-        fun = "identity",
-        geom = "point",
-        breaks = breaks,
-        col = y2col
-      ) +
-      ggplot2::scale_y_continuous(
-        y1lab,
-        sec.axis = ggplot2::sec_axis(~ . / scaleFactorExp, name = y2lab)
-      ) +
-      ggplot2::xlab(x_lab) +
-      ggplot2::ggtitle(paste("Total expected number and size of fires in", studyAreaName)) +
-      ggplot2::theme_bw() +
-      ggplot2::theme(
-        axis.title.y.left = ggplot2::element_text(color = y1col),
-        axis.text.y.left = ggplot2::element_text(color = y1col),
-        axis.title.y.right = ggplot2::element_text(color = y2col),
-        axis.text.y.right = ggplot2::element_text(color = y2col)
-      )
-  }
-
-  ggHistSim <- ggplot2::ggplot(subsetDT, ggplot2::aes(x = logSimSizeHa)) +
-    ggplot2::geom_histogram(breaks = breaks, alpha = 0.5, fill = y1col) +
-    ggplot2::stat_summary_bin(
-      data = summarySimDT,
-      mapping = aes(x = midsSim, y = medLogSimSizeHa * scaleFactorSim),
-      fun = "identity",
-      geom = "point",
-      breaks = breaks,
-      col = y2col
-    ) +
-    ggplot2::scale_y_continuous(
-      y1lab,
-      sec.axis = ggplot2::sec_axis(~ . / scaleFactorSim, name = y2lab)
-    ) +
-    ggplot2::xlab(x_lab) +
-    ggplot2::ggtitle(paste("Total simulated number and size of fires in", studyAreaName)) +
-    ggplot2::theme_bw() +
-    ggplot2::theme(
-      axis.title.y.left = ggplot2::element_text(color = y1col),
-      axis.text.y.left = ggplot2::element_text(color = y1col),
-      axis.title.y.right = ggplot2::element_text(color = y2col),
-      axis.text.y.right = ggplot2::element_text(color = y2col)
+    ggHistExp <- fireregimetools::fire_size_histogram(
+      subsetDT,
+      size_col = "expSizeHa",
+      size_unit = "ha",
+      title = paste("Total expected number and size of fires in", studyAreaName)
     )
+  }
 
   if ("png" %in% P(sim)$.plots) {
     if (isTRUE(fireModelUsesTargetSize)) {
@@ -661,6 +600,34 @@ plotFun <- function(sim) {
   ## so don't implement a hard requirement for either here.
   if (P(sim)$mode == "single") {
     stopifnot(suppliedElsewhere("burnMap", sim))
+
+    ## Create the initial rstTimeSinceFire HERE (in addition to InitSingle) when
+    ## flammableMap is supplied directly, so modules that init BEFORE burnSummaries --
+    ## e.g. LandMine's Init compareGeom() -- see a non-NULL rstTimeSinceFire (this module
+    ## supersedes timeSinceFire, whose .inputObjects used to create it). fireSense supplies
+    ## flammableMap via the flammableRTM synonym in InitSingle, so this block is skipped
+    ## there (flammableMap not yet present) and InitSingle creates it as before.
+    if (is.null(sim$rstTimeSinceFire) && !is.null(sim[["flammableMap"]])) {
+      if (!is.null(sim$nonForest_timeSinceDisturbance)) {
+        sim$rstTimeSinceFire <- reproducible::postProcess(
+          sim$nonForest_timeSinceDisturbance,
+          to = sim$flammableMap
+        )
+      } else {
+        sim$rstTimeSinceFire <- LandR::prepInputsStandAgeMap(
+          rasterToMatch = sim$flammableMap, ## resample SCANFI (30 m) to the flammableMap grid
+          dataSource = "SCANFI",
+          dataYear = P(sim)$dataYear,
+          ageFun = "terra::rast",
+          maskWithRTM = TRUE,
+          destinationPath = inputPath(sim)
+        )
+
+        ## non-flammable areas are permanent
+        sim$rstTimeSinceFire[sim$flammableMap[] == 0L] <- NA
+        sim$rstTimeSinceFire[] <- as.integer(sim$rstTimeSinceFire[])
+      }
+    }
   } else if (P(sim)$mode == "multi") {
     stopifnot(suppliedElsewhere("reportingPolygons", sim))
   }
