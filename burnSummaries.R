@@ -275,26 +275,18 @@ InitMulti <- function(sim) {
 
   browser()
   mod$useOutputs <- NROW(sim$outputsDF) > 0
-  if (mod$useOutputs) {
-    reps_str <- sub(".*/rep(\\d+)/.*", "\\1", sim$outputsDF$file)
-    mod$allReps <- paste0("rep", sort(unique(reps_str[as.integer(reps_str) %in% Par$reps])))
-    
-  } else {
-    mod$allReps <- sprintf("rep%02d", P(sim)$reps)
-  }
-  if (all(is.na(P(sim)$simTimes))) {
-    P(sim)$simTimes <- unlist(times(sim)[c("start", "end")])
-  }
-  padL <- ceiling(log10(P(sim)$simTimes[2] + 1))
-  padYearStart <- paddedFloatToChar(P(sim)$simTimes[1], padL = padL)
-  padYearEnd <- paddedFloatToChar(P(sim)$simTimes[2], padL = padL)
+  mod$allReps <- dirnamesFromSet(sim$outputsDF$file, P(sim)$reps)
+
+  ## assigned back: P(sim)$simTimes is read downstream, not just for padding
+  P(sim)$simTimes <- resolveSimYears(P(sim)$simTimes, sim)
+  pad <- padYears(P(sim)$simTimes)
 
   ## all reps have same flammable map
   if (mod$useOutputs) {
     flm <- unique(grep("flammable", sim$outputsDF$file, value = TRUE))
     flm <- grep(mod$allReps[1], flm, value = TRUE)
   } else {
-    flm <- file.path(outputPath(sim), mod$allReps[1], paste0("flammableMap_year", padYearEnd, ".tif"))
+    flm <- file.path(outputPath(sim), mod$allReps[1], paste0("flammableMap_year", pad$end, ".tif"))
   }
   
   stopifnot(file.exists(flm))
@@ -312,7 +304,7 @@ InitMulti <- function(sim) {
   } else {
     burnMaps <- lapply(mod$allReps, function(rep) {
       message(paste("Loading burn maps for rep", rep, "..."))
-      file.path(outputPath(sim), rep, paste0("burnMap_year", padYearEnd, ".tif"))
+      file.path(outputPath(sim), rep, paste0("burnMap_year", pad$end, ".tif"))
     })
     
   }
@@ -414,9 +406,7 @@ InitMulti <- function(sim) {
 
 FireSummaries <- function(sim) {
   # allReps <- sprintf("rep%02d", P(sim)$reps)
-  padL <- ceiling(log10(P(sim)$simTimes[2] + 1))
-  padYearStart <- paddedFloatToChar(P(sim)$simTimes[1], padL = padL)
-  padYearEnd <- paddedFloatToChar(P(sim)$simTimes[2], padL = padL)
+  pad <- padYears(P(sim)$simTimes)
 
   studyAreaName <- P(sim)$.studyAreaName
 
