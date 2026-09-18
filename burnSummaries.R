@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.0.2.9009"),
+  version = list(burnSummaries = "1.0.2.9010"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -149,7 +149,13 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
           simArea = P(sim)$.studyAreaName,
           size = N, ## use number of pixels (N) instead of areaBurned
           maxSize = NA_integer_, ## NOTE: no "target" or "expected" fire size w/ scfm nor fS
-          rep = repID
+          rep = repID,
+          ## LandMine emits these; scfm and fireSense have no notion of a retried fire. Declared
+          ## NA rather than omitted so every fire model writes the SAME schema -- arrow unifies
+          ## schemas across the per-replicate parquet files, and a mixed set would fail to open.
+          fireID = NA_integer_,
+          attempt = NA_integer_,
+          targetSize = NA_real_
         )]
         set(fs, NULL, c("areaBurned", "igLoc", "grp", "PolyID"), NULL)
         setcolorder(fs, c("simArea", "rep", "year", "size", "maxSize"))
