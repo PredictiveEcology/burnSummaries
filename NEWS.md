@@ -1,5 +1,20 @@
 # burnSummaries (development version)
 
+## Declare the fire-identity columns for scfm/fireSense too (`1.0.2.9010`)
+
+* LandMine 1.0.13 adds `fireID`, `attempt` and `targetSize` to its per-fire output, which flow
+  through to `burnSummaries_fireSizes.csv` and the per-replicate parquet untouched -- `setcolorder()`
+  with a subset keeps the remaining columns, and `setnames()` only renames `size`/`maxSize`.
+* The `burnSummary` branch (scfm, fireSense) now sets those three columns to `NA` rather than
+  omitting them, so every fire model writes the SAME schema. `fireregimetools::open_burn_dataset()`
+  hands a flat file list to `arrow::open_dataset()`, which unifies schemas across the per-replicate
+  parquet files, and a mixed set would fail to open as one dataset.
+* No change to how `simSize`/`expSize` are derived or plotted; `fireModelUsesTargetSize` still keys
+  off `expSize` being all-`NA`.
+* NOTE for anyone reading those outputs: `simSize == expSize` holds for essentially every LandMine
+  fire *by construction*, so it is not evidence fires reach their targets. Group the rows back into
+  whole fires with `LandWebUtils::landmine_fire_attainment()` instead.
+
 ## Fetch the NBAC/NFDB archives via fireregimetools (`1.0.2.9009`)
 
 * The hand-rolled download + extract block for the national fire archives is replaced by
