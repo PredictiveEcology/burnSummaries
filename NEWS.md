@@ -1,5 +1,7 @@
 # burnSummaries (development version)
 
+* **Replaced the never-run test stub with metadata tests, and added testthat CI.** `tests/testthat/test-template.R` was the SpaDES boilerplate, unedited: paths from another machine, calls to `Event1`/`Event2` functions this module does not define, and assertions against placeholder strings. It had never been run and would have failed instantly, while making the module look tested. In its place, characterization tests over the module's public contract -- the input and output object names and classes, and the parameter names -- which is what a project binds to and what nothing checked until now. The expectations are GENERATED from the module's live metadata rather than transcribed, and were verified to fail when the contract changes.
+
 ## Declare the fire-identity columns for scfm/fireSense too (`1.0.2.9010`)
 
 * LandMine 1.0.13 adds `fireID`, `attempt` and `targetSize` to its per-fire output, which flow
