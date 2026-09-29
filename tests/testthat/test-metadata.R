@@ -57,3 +57,12 @@ test_that("parameters are the expected names", {
   )
 })
 
+
+test_that("loadOrder runs after the renamed burn module", {
+  ## moduleMetadata() does not return `loadOrder`, so read it from the parsed defineModule() call
+  parsed <- parse(file.path(moduleRoot, paste0(moduleName, ".R")), keep.source = TRUE)
+  dm <- Filter(function(e) grepl("^defineModule", paste(deparse(e), collapse = "")), as.list(parsed))
+  lo <- eval(dm[[1]][[3]]$loadOrder)
+  expect_true("fireSense_burn" %in% lo$after)
+  expect_false("fireSense" %in% lo$after)
+})

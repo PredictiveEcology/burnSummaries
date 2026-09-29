@@ -7,12 +7,12 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.0.2.9011"),
+  version = list(burnSummaries = "1.0.2.9012"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("NEWS.md", "README.md", "burnSummaries.Rmd"),
-  loadOrder = list(after = c("fireSense", "LandMine", "scfmSpread")),
+  loadOrder = list(after = c("fireSense_burn", "LandMine", "scfmSpread")),
   ## fireregimetools >= 0.1.0.9003: fetch_nbac_polys()/fetch_nfdb_polys() acquire the national fire
   ## archives with a raised download timeout and verify each extraction against the archive
   ## manifest's sizes instead of merely checking existence (a truncated extraction used to be
@@ -66,7 +66,7 @@ defineModule(sim, list(
     expectsInput("burnMap", "SpatRaster",
                  desc = paste("Cumulative burn map.", "Required in single mode.")),
     expectsInput("burnSummary", "data.table",
-                 desc = paste("Fire summary table from `fireSense` or `scfm`.",
+                 desc = paste("Fire summary table from `fireSense_burn` or `scfm`.",
                               "One of `burnSummary` or `fireSizes` is required in single mode.")),
     expectsInput("fireSizes", "list",
                  desc = paste("Fire sizes summary tables from LandMine.",
