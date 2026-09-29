@@ -1,5 +1,9 @@
 # burnSummaries (development version)
 
+## Order after `fireSense_burn` (`1.0.2.9010`)
+
+* `loadOrder` now names `fireSense_burn` (the burn module renamed from `fireSense`); with the old name the ordering was silently ignored.
+
 ## Fetch the NBAC/NFDB archives via fireregimetools (`1.0.2.9009`)
 
 * The hand-rolled download + extract block for the national fire archives is replaced by
