@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.0.2.9011"),
+  version = list(burnSummaries = "1.0.2.9010"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -19,7 +19,7 @@ defineModule(sim, list(
   ## silently reused forever). Earlier versions lack the fetchers. `archive` is not called here, but
   ## fireregimetools uses libarchive for extraction when it is installed, which handles the zip64
   ## archives R's internal unzip cannot -- so keep it available.
-  reqdPkgs = list("archive", "data.table", "dplyr", "fs", "LandR", "FOR-CAST/fireregimetools (>= 0.1.0.9003)",
+  reqdPkgs = list("archive", "data.table", "dplyr", "FOR-CAST/fireregimetools (>= 0.1.0.9003)",
                   "ggplot2", "ggspatial", "kSamples", "patchwork", "purrr",
                   "reproducible", "SpaDES.core", "stringr", "terra", "tidyterra"),
   parameters = bindrows(
