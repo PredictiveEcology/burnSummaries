@@ -1,5 +1,9 @@
 # burnSummaries (development version)
 
+## Missing packages in `reqdPkgs` (`1.0.2.9011`)
+
+* `reqdPkgs` now lists `fs` and `LandR`, which the module's code uses.
+
 ## Order after `fireSense_burn` (`1.0.2.9010`)
 
 * `loadOrder` now names `fireSense_burn` (the burn module renamed from `fireSense`); with the old name the ordering was silently ignored.
