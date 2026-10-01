@@ -11,7 +11,10 @@
 * `loadOrder` now names `fireSense_burn` (the burn module renamed from `fireSense`); with the old name the ordering was silently ignored.
 ## Missing packages in `reqdPkgs` (`1.0.2.9013`)
 
-* `reqdPkgs` now lists `fs` and `LandR`, which the module's code uses.
+* `reqdPkgs` now lists `PredictiveEcology/LandR@development`: `LandR::prepInputsStandAgeMap()` needs
+  LandR installed, and LandR is not on CRAN, so it must be listed with its remote.
+* `reqdPkgs` no longer lists `purrr` (unused since the NBAC/NFDB fetch moved to fireregimetools) or
+  `kSamples` (only in a commented-out call); neither is used by fireregimetools either.
 
 ## Order after `fireSense_burn` (`1.0.2.9012`)
 
