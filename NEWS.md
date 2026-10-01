@@ -1,5 +1,9 @@
 # burnSummaries (development version)
 
+## Multi mode from outputs(sim)
+
+* `InitMulti()` and `FireSummaries()` take the replicate files from `outputsDF` (so far only on `modsForFireSense`), and a `browser()` call left in `InitMulti()` is removed, so multi mode runs unattended. Needs SpaDES.core >= 3.2.1.9001 (`dirnamesFromSet()`, `resolveSimYears()`, `padYears()`).
+
 ## Order after `fireSense_burn` (`1.0.2.9012`)
 
 * `loadOrder` now names `fireSense_burn` (the burn module renamed from `fireSense`); with the old name the ordering was silently ignored.
