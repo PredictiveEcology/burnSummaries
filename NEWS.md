@@ -4,6 +4,34 @@
 
 * `loadOrder` now names `fireSense_burn` (the burn module renamed from `fireSense`); with the old name the ordering was silently ignored.
 
+## Order after `fireSense_burn` (`1.0.2.9012`)
+
+* `loadOrder` now names `fireSense_burn` (the burn module renamed from `fireSense`); with the old name the ordering was silently ignored.
+
+* **Replaced the never-run test stub with metadata tests, and added testthat CI.** `tests/testthat/test-template.R` was the SpaDES boilerplate, unedited: paths from another machine, calls to `Event1`/`Event2` functions this module does not define, and assertions against placeholder strings. It had never been run and would have failed instantly, while making the module look tested. In its place, characterization tests over the module's public contract -- the input and output object names and classes, and the parameter names -- which is what a project binds to and what nothing checked until now. The expectations are GENERATED from the module's live metadata rather than transcribed, and were verified to fail when the contract changes.
+
+## Read only the study area's fire records (`1.0.2.9011`)
+
+* Needs `fireregimetools >= 0.1.0.9008` (was `>= 0.1.0.9003`), from FOR-CAST's `main`. From 0.1.0.9007
+  `fetch_nbac_polys()` and `fetch_nfdb_polys()` read only the study area's extent of each national file
+  instead of all of it (FOR-CAST/fireregimetools#2); 0.1.0.9008 builds that extent from the study area's
+  outline, so records just inside a curved or reprojected edge are kept.
+
+## Declare the fire-identity columns for scfm/fireSense too (`1.0.2.9010`)
+
+* LandMine 1.0.13 adds `fireID`, `attempt` and `targetSize` to its per-fire output, which flow
+  through to `burnSummaries_fireSizes.csv` and the per-replicate parquet untouched -- `setcolorder()`
+  with a subset keeps the remaining columns, and `setnames()` only renames `size`/`maxSize`.
+* The `burnSummary` branch (scfm, fireSense) now sets those three columns to `NA` rather than
+  omitting them, so every fire model writes the SAME schema. `fireregimetools::open_burn_dataset()`
+  hands a flat file list to `arrow::open_dataset()`, which unifies schemas across the per-replicate
+  parquet files, and a mixed set would fail to open as one dataset.
+* No change to how `simSize`/`expSize` are derived or plotted; `fireModelUsesTargetSize` still keys
+  off `expSize` being all-`NA`.
+* NOTE for anyone reading those outputs: `simSize == expSize` holds for essentially every LandMine
+  fire *by construction*, so it is not evidence fires reach their targets. Group the rows back into
+  whole fires with `LandWebUtils::landmine_fire_attainment()` instead.
+
 ## Fetch the NBAC/NFDB archives via fireregimetools (`1.0.2.9009`)
 
 * The hand-rolled download + extract block for the national fire archives is replaced by

@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.0.2.9010"),
+  version = list(burnSummaries = "1.0.2.9012"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -16,10 +16,12 @@ defineModule(sim, list(
   ## fireregimetools >= 0.1.0.9003: fetch_nbac_polys()/fetch_nfdb_polys() acquire the national fire
   ## archives with a raised download timeout and verify each extraction against the archive
   ## manifest's sizes instead of merely checking existence (a truncated extraction used to be
-  ## silently reused forever). Earlier versions lack the fetchers. `archive` is not called here, but
+  ## silently reused forever). Earlier versions lack the fetchers. >= 0.1.0.9008: they read only
+  ## the study area's extent of each national file (FOR-CAST/fireregimetools#2), with that extent
+  ## built from the study area's outline so records near a curved or reprojected edge are kept. `archive` is not called here, but
   ## fireregimetools uses libarchive for extraction when it is installed, which handles the zip64
   ## archives R's internal unzip cannot -- so keep it available.
-  reqdPkgs = list("archive", "data.table", "dplyr", "FOR-CAST/fireregimetools (>= 0.1.0.9003)",
+  reqdPkgs = list("archive", "data.table", "dplyr", "FOR-CAST/fireregimetools@main (>= 0.1.0.9008)",
                   "ggplot2", "ggspatial", "kSamples", "patchwork", "purrr",
                   "reproducible", "SpaDES.core", "stringr", "terra", "tidyterra"),
   parameters = bindrows(
@@ -157,7 +159,13 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
           simArea = P(sim)$.studyAreaName,
           size = N, ## use number of pixels (N) instead of areaBurned
           maxSize = NA_integer_, ## NOTE: no "target" or "expected" fire size w/ scfm nor fS
-          rep = repID
+          rep = repID,
+          ## LandMine emits these; scfm and fireSense have no notion of a retried fire. Declared
+          ## NA rather than omitted so every fire model writes the SAME schema -- arrow unifies
+          ## schemas across the per-replicate parquet files, and a mixed set would fail to open.
+          fireID = NA_integer_,
+          attempt = NA_integer_,
+          targetSize = NA_real_
         )]
         set(fs, NULL, c("areaBurned", "igLoc", "grp", "PolyID"), NULL)
         setcolorder(fs, c("simArea", "rep", "year", "size", "maxSize"))
