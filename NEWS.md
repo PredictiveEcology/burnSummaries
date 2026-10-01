@@ -6,6 +6,13 @@
 
 * In single mode the `save_single` event at the start of `summaryPeriod` is scheduled at `summaryPeriod[1]`, not `start(sim) + summaryPeriod[1]` (the parameter is already a simulation time).
 
+## Order after `fireSense_burn` (`1.0.2.9010`)
+
+* `loadOrder` now names `fireSense_burn` (the burn module renamed from `fireSense`); with the old name the ordering was silently ignored.
+## Missing packages in `reqdPkgs` (`1.0.2.9013`)
+
+* `reqdPkgs` now lists `fs` and `LandR`, which the module's code uses.
+
 ## Order after `fireSense_burn` (`1.0.2.9012`)
 
 * `loadOrder` now names `fireSense_burn` (the burn module renamed from `fireSense`); with the old name the ordering was silently ignored.
