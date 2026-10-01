@@ -22,7 +22,7 @@ defineModule(sim, list(
   ## fireregimetools uses libarchive for extraction when it is installed, which handles the zip64
   ## archives R's internal unzip cannot -- so keep it available.
   reqdPkgs = list("archive", "data.table", "dplyr", "PredictiveEcology/LandR@development", "FOR-CAST/fireregimetools@main (>= 0.1.0.9008)",
-                  "ggplot2", "ggspatial", "kSamples", "patchwork", "purrr",
+                  "ggplot2", "ggspatial", "patchwork",
                   "reproducible", "SpaDES.core", "stringr", "terra", "tidyterra"),
   parameters = bindrows(
     defineParameter("dataYear", "integer", 2020L, NA, NA,
