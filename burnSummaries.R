@@ -21,7 +21,7 @@ defineModule(sim, list(
   ## built from the study area's outline so records near a curved or reprojected edge are kept. `archive` is not called here, but
   ## fireregimetools uses libarchive for extraction when it is installed, which handles the zip64
   ## archives R's internal unzip cannot -- so keep it available.
-  reqdPkgs = list("archive", "data.table", "dplyr", "fs", "LandR", "FOR-CAST/fireregimetools@main (>= 0.1.0.9008)",
+  reqdPkgs = list("archive", "data.table", "dplyr", "PredictiveEcology/LandR@development", "FOR-CAST/fireregimetools@main (>= 0.1.0.9008)",
                   "ggplot2", "ggspatial", "kSamples", "patchwork", "purrr",
                   "reproducible", "SpaDES.core", "stringr", "terra", "tidyterra"),
   parameters = bindrows(

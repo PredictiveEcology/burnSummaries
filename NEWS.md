@@ -2,7 +2,8 @@
 
 ## Missing packages in `reqdPkgs` (`1.0.2.9013`)
 
-* `reqdPkgs` now lists `fs` and `LandR`, which the module's code uses.
+* `reqdPkgs` now lists `PredictiveEcology/LandR@development`: `LandR::prepInputsStandAgeMap()` needs
+  LandR installed, and LandR is not on CRAN, so it must be listed with its remote.
 
 ## Order after `fireSense_burn` (`1.0.2.9012`)
 
