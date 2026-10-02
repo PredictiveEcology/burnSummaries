@@ -1,5 +1,14 @@
 # burnSummaries (development version)
 
+## Multi mode from outputs(sim)
+
+* `InitMulti()` and `FireSummaries()` take the replicate files from `outputsDF` (so far only on `modsForFireSense`), and a `browser()` call left in `InitMulti()` is removed, so multi mode runs unattended. Needs SpaDES.core >= 3.2.1.9001 (`dirnamesFromSet()`, `resolveSimYears()`, `padYears()`).
+
+* In single mode the `save_single` event at the start of `summaryPeriod` is scheduled at `summaryPeriod[1]`, not `start(sim) + summaryPeriod[1]` (the parameter is already a simulation time).
+
+## Order after `fireSense_burn` (`1.0.2.9010`)
+
+* `loadOrder` now names `fireSense_burn` (the burn module renamed from `fireSense`); with the old name the ordering was silently ignored.
 ## Missing packages in `reqdPkgs` (`1.0.2.9013`)
 
 * `reqdPkgs` now lists `PredictiveEcology/LandR@development`: `LandR::prepInputsStandAgeMap()` needs
