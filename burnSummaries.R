@@ -373,14 +373,7 @@ InitMulti <- function(sim) {
       nbac[, "YEAR"]    }
   }
 
-  fireYears <- tidyterra::filter(firePolys, YEAR > 0) |> dplyr::pull("YEAR") |> unique() |> sort()
-  meanAnnualCumulBurnMapHistoric <- terra::rasterize(
-    firePolys,
-    flammableMap,
-    field = "YEAR",
-    fun = "count"
-  )
-  meanAnnualCumulBurnMapHistoric <- meanAnnualCumulBurnMapHistoric / length(fireYears)
+  meanAnnualCumulBurnMapHistoric <- historicMeanAnnualBurnMap(firePolys, flammableMap)
   f_meanAnnualCumulBurnMapHistoric <- file.path(
     outputPath(sim),
     "meanAnnualCumulBurnMapHistoric.tif"
@@ -449,6 +442,42 @@ FireSummaries <- function(sim) {
   return(invisible(sim))
 }
 
+## Mean annual burn per cell of the historic record: the number of fire polygons covering a
+## cell, divided by the length of the record (first to last year, inclusive). Dividing by
+## the number of years *with* fires would overstate it relative to the simulated map, which
+## is divided by the full simulation length.
+historicMeanAnnualBurnMap <- function(firePolys, flammableMap) {
+  years <- dplyr::pull(tidyterra::filter(firePolys, YEAR > 0), "YEAR")
+  recordLength <- diff(range(years)) + 1L
+  terra::rasterize(firePolys, flammableMap, field = "YEAR", fun = "count") / recordLength
+}
+
+## Side-by-side historic and simulated mean annual burn maps on one fill scale.
+cumulBurnMapPlots <- function(historic, simulated, studyAreaName, use_palette = "muted") {
+  limits <- range(c(terra::values(historic), terra::values(simulated)), finite = TRUE)
+  legendTitle <- "Mean annual burn\n(burns per cell per year)"
+
+  mapPlot <- function(r, title) {
+    ggplot2::ggplot() +
+      tidyterra::geom_spatraster(data = r) +
+      tidyterra::scale_fill_whitebox_c(palette = use_palette, limits = limits, name = legendTitle) +
+      ggplot2::theme_bw() +
+      ggspatial::annotation_north_arrow(
+        location = "bl",
+        which_north = "true",
+        pad_x = ggplot2::unit(0.25, "in"),
+        pad_y = ggplot2::unit(0.25, "in"),
+        style = north_arrow_fancy_orienteering
+      ) +
+      ggplot2::xlab("Longitude") +
+      ggplot2::ylab("Latitude") +
+      ggplot2::ggtitle(paste(title, "mean annual cumulative burn map for", studyAreaName))
+  }
+
+  (mapPlot(historic, "Historic") | mapPlot(simulated, "Simulated")) +
+    patchwork::plot_layout(guides = "collect")
+}
+
 ### template for plot events
 plotFun <- function(sim) {
   # ! ----- EDIT BELOW ----- ! #
@@ -457,39 +486,15 @@ plotFun <- function(sim) {
   ## cumulative burn maps
   use_palette = "muted" # "bl_yl_rd"
 
-  ggCumulBurnMapExp <- ggplot2::ggplot() +
-    tidyterra::geom_spatraster(data = mod$meanAnnualCumulBurnMapHistoric) +
-    tidyterra::scale_fill_whitebox_c(palette = use_palette) +
-    ggplot2::theme_bw() +
-    ggspatial::annotation_north_arrow(
-      location = "bl",
-      which_north = "true",
-      pad_x = ggplot2::unit(0.25, "in"),
-      pad_y = ggplot2::unit(0.25, "in"),
-      style = north_arrow_fancy_orienteering
-    ) +
-    ggplot2::xlab("Longitude") +
-    ggplot2::ylab("Latitude") +
-    ggplot2::ggtitle(paste("Historic mean annual cumulative burn map for", studyAreaName))
-
-  ggCumulBurnMapSim <- ggplot2::ggplot() +
-    tidyterra::geom_spatraster(data = mod$meanAnnualCumulBurnMap) +
-    tidyterra::scale_fill_whitebox_c(palette = use_palette) +
-    ggplot2::theme_bw() +
-    ggspatial::annotation_north_arrow(
-      location = "bl",
-      which_north = "true",
-      pad_x = ggplot2::unit(0.25, "in"),
-      pad_y = ggplot2::unit(0.25, "in"),
-      style = north_arrow_fancy_orienteering
-    ) +
-    ggplot2::xlab("Longitude") +
-    ggplot2::ylab("Latitude") +
-    ggplot2::ggtitle(paste("Simulated mean annual cumulative burn map for", studyAreaName))
+  ggCumulBurnMap <- cumulBurnMapPlots(
+    mod$meanAnnualCumulBurnMapHistoric,
+    mod$meanAnnualCumulBurnMap,
+    studyAreaName,
+    use_palette
+  )
 
   if ("png" %in% P(sim)$.plots) {
     fggCumulBurnMap <- file.path(figurePath(sim), "cumulative_burn_maps.png")
-    ggCumulBurnMap <- (ggCumulBurnMapExp | ggCumulBurnMapSim)
     ggplot2::ggsave(fggCumulBurnMap, ggCumulBurnMap, height = 10, width = 20, type = "cairo")
     sim <- registerOutputs(fggCumulBurnMap, sim)
   }
