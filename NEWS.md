@@ -1,5 +1,9 @@
 # burnSummaries (development version)
 
+## Burn maps on one scale
+
+* The historic mean annual cumulative burn map is divided by the length of the fire record (first to last year), not the number of years with fires, so it is comparable with the simulated map. The historic and simulated maps share one fill scale and one legend, in burns per cell per year.
+
 ## Multi mode from outputs(sim)
 
 * `InitMulti()` and `FireSummaries()` take the replicate files from `outputsDF` (so far only on `modsForFireSense`), and a `browser()` call left in `InitMulti()` is removed, so multi mode runs unattended. Needs SpaDES.core >= 3.2.1.9001 (`dirnamesFromSet()`, `resolveSimYears()`, `padYears()`).
