@@ -1,3 +1,144 @@
-# burnSummaries 0.0.1 (04 September 2023)
+# burnSummaries 1.1.0
 
-- initial module version
+burnSummaries can now compare simulated fires with observed ones. It downloads the national fire perimeter records (NBAC, with NFDB filling earlier years) for just the study area, and builds fire-size summaries with the fireregimetools package. It works with a single simulation or with many saved replicates, and it accepts the fire outputs of scfm and fireSense as well as LandMine.
+
+Downloads of the national fire records are more reliable, and an interrupted download no longer leaves a broken file behind. The stand-age map is reused across replicates instead of rebuilt each time. A summary period outside the simulation's start and end now stops with a clear message. The module also lists every package it needs, runs after the renamed fire modules, and has automatic tests.
+
+## Missing packages in `reqdPkgs` (`1.0.2.9013`)
+
+* `reqdPkgs` now lists `PredictiveEcology/LandR@development`: `LandR::prepInputsStandAgeMap()` needs
+  LandR installed, and LandR is not on CRAN, so it must be listed with its remote.
+* `reqdPkgs` no longer lists `purrr` (unused since the NBAC/NFDB fetch moved to fireregimetools) or
+  `kSamples` (only in a commented-out call); neither is used by fireregimetools either.
+
+## Order after `fireSense_burn` (`1.0.2.9012`)
+
+* `loadOrder` now names `fireSense_burn` (the burn module renamed from `fireSense`); with the old name the ordering was silently ignored.
+
+* **Replaced the never-run test stub with metadata tests, and added testthat CI.** `tests/testthat/test-template.R` was the SpaDES boilerplate, unedited: paths from another machine, calls to `Event1`/`Event2` functions this module does not define, and assertions against placeholder strings. It had never been run and would have failed instantly, while making the module look tested. In its place, characterization tests over the module's public contract -- the input and output object names and classes, and the parameter names -- which is what a project binds to and what nothing checked until now. The expectations are GENERATED from the module's live metadata rather than transcribed, and were verified to fail when the contract changes.
+
+## Read only the study area's fire records (`1.0.2.9011`)
+
+* Needs `fireregimetools >= 0.1.0.9008` (was `>= 0.1.0.9003`), from FOR-CAST's `main`. From 0.1.0.9007
+  `fetch_nbac_polys()` and `fetch_nfdb_polys()` read only the study area's extent of each national file
+  instead of all of it (FOR-CAST/fireregimetools#2); 0.1.0.9008 builds that extent from the study area's
+  outline, so records just inside a curved or reprojected edge are kept.
+
+## Declare the fire-identity columns for scfm/fireSense too (`1.0.2.9010`)
+
+* LandMine 1.0.13 adds `fireID`, `attempt` and `targetSize` to its per-fire output, which flow
+  through to `burnSummaries_fireSizes.csv` and the per-replicate parquet untouched -- `setcolorder()`
+  with a subset keeps the remaining columns, and `setnames()` only renames `size`/`maxSize`.
+* The `burnSummary` branch (scfm, fireSense) now sets those three columns to `NA` rather than
+  omitting them, so every fire model writes the SAME schema. `fireregimetools::open_burn_dataset()`
+  hands a flat file list to `arrow::open_dataset()`, which unifies schemas across the per-replicate
+  parquet files, and a mixed set would fail to open as one dataset.
+* No change to how `simSize`/`expSize` are derived or plotted; `fireModelUsesTargetSize` still keys
+  off `expSize` being all-`NA`.
+* NOTE for anyone reading those outputs: `simSize == expSize` holds for essentially every LandMine
+  fire *by construction*, so it is not evidence fires reach their targets. Group the rows back into
+  whole fires with `LandWebUtils::landmine_fire_attainment()` instead.
+
+## Fetch the NBAC/NFDB archives via fireregimetools (`1.0.2.9009`)
+
+* The hand-rolled download + extract block for the national fire archives is replaced by
+  `fireregimetools::fetch_nbac_polys()` / `fetch_nfdb_polys()` (>= 0.1.0.9003), which carry the same
+  protections this module had to grow on its own -- raised download timeout, `.part` staging, and
+  extraction verified against the archive manifest rather than a bare existence check -- plus two the
+  module lacked: a truncated cached archive is re-downloaded instead of re-extracted, and concurrent
+  workers sharing an inputs directory coordinate via a lock rather than each pulling their own copy.
+* `FOR-CAST/workflowtools` drops out of `reqdPkgs` (its `archive_extract_once()` is no longer called
+  here). `archive` stays: fireregimetools uses libarchive for extraction when it is installed.
+
+## Reuse the cached stand-age input across replicates (`1.0.2.9007`)
+
+* `.inputObjects` now downloads/reads the SCANFI stand-age source used to seed `rstTimeSinceFire`
+  into `inputPath(sim)` (the shared inputs cache) instead of the per-replicate `outputPath(sim)`.
+  Previously every replicate re-downloaded the ~5.2 GB SCANFI age file to its own output directory,
+  so a multi-replicate mainSim launched many simultaneous large downloads; one dropped its
+  connection and, with the headless no-retry guard, failed the whole run. Pointing at the shared
+  inputs path reuses the already-cached file (no re-download).
+
+## Robust downloads for the large NBAC/NFDB archives (`1.0.2.9006`)
+
+* Downloading the ~1.2 GB NBAC composite exceeded R's default 60 s `download.file` timeout, silently
+  truncating the zip (extraction then failed with `ZIP decompression failed`). Raise the timeout and
+  download to a `.part` file that is renamed only on success, so a truncated/interrupted download is
+  not mistaken for a complete one on a later run.
+
+## Self-contained summary-output times (`1.0.2.9005`)
+
+* Inline the summary-output-times calculation (`seq()` over the summary period) instead of calling
+  `LandWebUtils::analysesOutputsTimes()`. burnSummaries is a generic module and does not declare
+  LandWebUtils; the bare call only resolved when a LandWeb module (e.g. NRV_summary) was co-run and
+  loaded it, so a standalone `mode = "multi"` run errored with `could not find function`.
+
+## Observed fire perimeters from NBAC + NFDB backfill (`1.0.2.9004`)
+
+* The historical (observed) cumulative burn map now uses **National Burned Area Composite (NBAC)**
+  perimeters (satellite-derived, 1972-present) as the authoritative source, supplemented with
+  **National Fire DataBase (NFDB)** polygons ONLY for years NBAC does not cover. Older NFDB
+  perimeters are aerial sketches that overestimate burned area, so NBAC is preferred wherever it
+  exists. Loading + harmonising (tolerant `YEAR`/`SIZE_HA` columns, clipped to the sim grid) is done
+  via `fireregimetools::load_nbac_polys()` / `load_nfdb_polys()` (>= 0.1.0), replacing the former
+  NFDB-only historical burn map.
+
+## Fire-regime summaries via fireregimetools (`1.0.2.9003`)
+
+* Adopt the shared, arrow-native `FOR-CAST/fireregimetools` package for the fire-size summaries.
+  `create_fireSizes` now also publishes each replicate's fire-size table as a parquet partition
+  (`fireregimetools::write_burn_parquet`); `multi`-mode `FireSummaries` reads all replicates as one
+  lazy Arrow dataset (`fireregimetools::open_burn_dataset`) instead of `rbind`-ing the per-replicate
+  CSVs into memory; and the fire-size distribution plots (`ggHistSim` / `ggHistExp`) are drawn by
+  `fireregimetools::fire_size_histogram()` (count histogram with a median-log-size-per-bin overlay),
+  replacing the bespoke `hist()` + `stat_summary_bin()` dual-axis code. The per-replicate and
+  all-reps CSVs are still written. Adds `FOR-CAST/fireregimetools` to `reqdPkgs`.
+
+*NEWS was not maintained between the initial `0.0.1` module and the current development
+version (`1.0.2.9001`); this entry catches up the substantive changes over that window.*
+
+## Module architecture and modes
+
+* Extracted the burn post-processing code out of the main LandWeb repository into a
+  self-contained module (2023-09); reached `1.0.0` alongside an scfm update and adoption of
+  `terra` (2024-06).
+* Added a two-phase single/multi mode. `single` mode saves the inputs that `multi` mode needs
+  as its own outputs (avoiding unreliable whole-`simList` loads), incorporates the former
+  `timeSinceFire` module, calls `registerOutputs()`, and switches serialization to `qs2`;
+  `multi` mode loads from the saved files. Plotting moved from `rasterVis` to `ggplot2` +
+  `tidyterra`, and spatial objects to `terra` vectors.
+* Added custom per-object saving in `single` mode; expected/simulated expected-value
+  calculation and plotting are skipped when target fire sizes are absent.
+
+## Simulation-time alignment
+
+* `analysesOutputsTimes` and the scheduled `save_single` events are now offset by `start(sim)`
+  so summary times are simulation-start-relative.
+* Added an `Init`-time guard that `summaryPeriod` falls within `start(sim)`/`end(sim)`.
+
+## fireSense interoperability
+
+* Accept differently-named fireSense objects: `flammableRTM` as an alternative to
+  `flammableMap`, and `nonForest_timeSinceDisturbance` as an alternative to `rstTimeSinceFire`,
+  with matching fallback logic.
+* Declare `loadOrder = list(after = c("fireSense", "LandMine", "scfmSpread"))` so the module
+  runs after any of the fire modules; moved input-object resolution from `.inputObjects` into
+  `Init`.
+
+## Fire-history retrieval and outputs
+
+* Introduced a historical cumulative (mean-annual) burn map derived from NFDB fire polygons.
+* Replaced the failing `prepInputs()` NFDB fetch with a manual `download.file()` +
+  `archive::archive_extract()`, dropping invalid geometries via `terra::is.valid` (avoiding
+  slow `makeValid`) and combining with `tidyterra::bind_spat_rows`; added `archive` and
+  `purrr` to `reqdPkgs`.
+
+## Housekeeping
+
+* Added explicit `ggplot2::` and `data.table::` package prefixes throughout.
+* Replaced the hand-rolled "undefined event type" warning with `noEventWarning(sim)`.
+* Added LandMine, scfm, and fireSense citations.
+
+# burnSummaries 0.0.1 (2023-09-04)
+
+* initial module version

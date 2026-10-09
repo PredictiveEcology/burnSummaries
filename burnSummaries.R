@@ -1,34 +1,50 @@
 defineModule(sim, list(
   name = "burnSummaries",
-  description = "",
+  description = "Extract simulated fire sizes to generate fire regime statistics",
   keywords = "",
   authors = c(
     person("Alex M", "Chubaty", email = "achubaty@for-cast.ca", role = c("aut", "cre"),
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.0.0"),
+  version = list(burnSummaries = "1.1.0"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("NEWS.md", "README.md", "burnSummaries.Rmd"),
-  reqdPkgs = list("data.table", "ggplot2", "kSamples", "patchwork",
-                  "rasterVis", "reproducible", "SpaDES.core", "terra"),
+  loadOrder = list(after = c("fireSense_burn", "LandMine", "scfmSpread")),
+  ## fireregimetools >= 0.1.0.9003: fetch_nbac_polys()/fetch_nfdb_polys() acquire the national fire
+  ## archives with a raised download timeout and verify each extraction against the archive
+  ## manifest's sizes instead of merely checking existence (a truncated extraction used to be
+  ## silently reused forever). Earlier versions lack the fetchers. >= 0.1.0.9008: they read only
+  ## the study area's extent of each national file (FOR-CAST/fireregimetools#2), with that extent
+  ## built from the study area's outline so records near a curved or reprojected edge are kept. `archive` is not called here, but
+  ## fireregimetools uses libarchive for extraction when it is installed, which handles the zip64
+  ## archives R's internal unzip cannot -- so keep it available.
+  reqdPkgs = list("archive", "data.table", "dplyr", "PredictiveEcology/LandR@development", "FOR-CAST/fireregimetools@main (>= 0.1.0.9008)",
+                  "ggplot2", "ggspatial", "patchwork",
+                  "reproducible", "SpaDES.core", "stringr", "terra", "tidyterra"),
   parameters = bindrows(
+    defineParameter("dataYear", "integer", 2020L, NA, NA,
+                    "data year for the SCANFI stand-age inputs used to seed rstTimeSinceFire (single mode)"),
+    defineParameter("fireTimestep", "integer", 1L, NA, NA,
+                    "simulation time interval between burn events"),
+    defineParameter("mode", "character", "single", NA, NA,
+                    paste("use 'single' to run part of a simulation;",
+                          "use 'multi' to run as part of postprocessing multiple runs.")),
     defineParameter("reps", "integer", 1L:10L, 1L, NA_integer_,
-                    paste("number of replicates/runs per study area.")),
-    defineParameter("simOutPrefix", "character", "mySimOut", NA_character_, NA_character_,
-                    "saved simList file prefix"),
+                    paste("in single mode, should be length 1 indicating the replicate id;",
+                          "in multi mode, a vector of replicate IDs.")),
     defineParameter("simOutputPath", "character", outputPath(sim), NA, NA,
                     "Directory specifying the location of the simulation outputs."),
     defineParameter("simTimes", "numeric", c(NA, NA), NA, NA,
                     "Simulation start and end times when running in 'multi' mode."),
-    defineParameter("upload", "logical", FALSE, NA, NA,
-                    "if TRUE, uses the `googledrive` package to upload figures."),
-    defineParameter("uploadTo", "character", NA, NA, NA,
-                    paste("if `upload = TRUE`, a Google Drive folder id corresponding to `.studyAreaName`.")),
-    defineParameter(".plots", "character", "screen", NA, NA,
-                    "Used by Plots function, which can be optionally used here"),
+    defineParameter("summaryInterval", "integer", 100L, NA, NA,
+                    "simulation time interval at which to take 'snapshots' used for summary analyses"),
+    defineParameter("summaryPeriod", "integer", start(sim) + c(700L, 1000L), NA, NA,
+                    "lower and upper end of the range of simulation times used for summary analyses"),
+    defineParameter(".plots", "character", "png", NA, NA,
+                    "Used by `Plots` function, which can be optionally used here."),
     defineParameter(".plotInitialTime", "numeric", start(sim), NA, NA,
                     "Describes the simulation time at which the first plot event should occur."),
     defineParameter(".plotInterval", "numeric", NA, NA, NA,
@@ -47,11 +63,31 @@ defineModule(sim, list(
                     "Should caching of events or module be used?")
   ),
   inputObjects = bindrows(
-    expectsInput("speciesLayers", "SpatRaster",
-                 desc = "initial percent cover raster layers used for simulation.")
+    expectsInput("burnMap", "SpatRaster",
+                 desc = paste("Cumulative burn map.", "Required in single mode.")),
+    expectsInput("burnSummary", "data.table",
+                 desc = paste("Fire summary table from `fireSense_burn` or `scfm`.",
+                              "One of `burnSummary` or `fireSizes` is required in single mode.")),
+    expectsInput("fireSizes", "list",
+                 desc = paste("Fire sizes summary tables from LandMine.",
+                              "One of `burnSummary` or `fireSizes` is required in single mode.")),
+    expectsInput("flammableMap", "SpatRaster",
+                 desc = paste("Binary flammability map.",
+                              "Required in single mode.")),
+    expectsInput("nonForest_timeSinceDisturbance",  "SpatRaster",
+                 desc = paste("map of time since last burn, with non-flammable pixels receiving `NA`.",
+                              "One of `rstTimeSinceFire` or `nonForest_timeSinceDisturbance` is required in single mode.")),
+    expectsInput("rstCurrentBurn", "SpatRaster",
+                 desc = "Binary raster of fires, 1 meaning 'burned', 0 or NA is non-burned"),
+    expectsInput("rstTimeSinceFire", "SpatRaster",
+                 desc = paste("map of time since last burn, with non-flammable pixels receiving `NA`.",
+                              "One of `rstTimeSinceFire` or `nonForest_timeSinceDisturbance` is required in single mode.")),
   ),
   outputObjects = bindrows(
-    createsOutput("fireSizes", "data.table", "summary fire sizes table")
+    createsOutput("fireSizes", "data.table",
+                  desc = "summary fire sizes table"),
+    createsOutput("rstTimeSinceFire", "SpatRaster",
+                  desc = "map of time since last burn, with non-flammable pixels receiving `NA`.")
   )
 ))
 
@@ -62,19 +98,91 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
   switch(
     eventType,
     init = {
-      ### check for more detailed object dependencies:
-      ### (use `checkObject` or similar)
-
-      # do stuff for this event
-      sim <- Init(sim)
-
-      # schedule future event(s)
-      sim <- scheduleEvent(sim, start(sim), "burnSummaries", "summary")
-      sim <- scheduleEvent(sim, start(sim), "burnSummaries", "plot")
-
-      if (isTRUE(P(sim)$upload)) {
-        sim <- scheduleEvent(sim, end(sim), "burnSummaries", "upload", .last())
+      if (min(P(sim)$summaryPeriod) < start(sim) || max(P(sim)$summaryPeriod) > end(sim)) {
+        stop("summaryPeriod values are outside the range of simulation times")
       }
+
+      ## summary output times = seq over the summary period (inlined so this generic
+      ## module does not depend on LandWebUtils::analysesOutputsTimes -- which is only
+      ## loaded when a LandWeb module like NRV_summary is co-run, not in standalone
+      ## mode="multi").
+      mod$analysesOutputsTimes <- start(sim) +
+        seq(P(sim)$summaryPeriod[1], P(sim)$summaryPeriod[2], by = P(sim)$summaryInterval)
+
+      if (P(sim)$mode == "single") {
+        sim <- InitSingle(sim)
+
+        sim <- scheduleEvent(sim, start(sim), "burnSummaries", "update_tsf")
+        sim <- scheduleEvent(sim, end(sim), "burnSummaries", "create_fireSizes", .last())
+
+        sim <- scheduleEvent(sim, start(sim), "burnSummaries", "save_single", .last())
+        ## fmt: skip
+        sim <- scheduleEvent(sim, start(sim) + P(sim)$summaryPeriod[1], "burnSummaries", "save_single", .last())
+        sim <- scheduleEvent(sim, end(sim), "burnSummaries", "save_single", .last())
+      } else if (P(sim)$mode == "multi") {
+        sim <- InitMulti(sim)
+
+        ## schedule future event(s)
+        sim <- scheduleEvent(sim, start(sim), "burnSummaries", "summary")
+        sim <- scheduleEvent(sim, start(sim), "burnSummaries", "plot")
+      }
+    },
+    update_tsf = {
+      sim$rstTimeSinceFire[] <- as.integer(sim$rstTimeSinceFire[]) + as.integer(P(sim)$fireTimestep) ## preserves NAs
+      sim$rstTimeSinceFire[which(sim$rstCurrentBurn[] == 1)] <- 0L
+
+      ## schedule next event
+      sim <- scheduleEvent(sim, time(sim) + P(sim)$fireTimestep, "burnSummaries", "update_tsf")
+    },
+    create_fireSizes = {
+      ## try to guess the replicate being run
+      if (length(P(sim)$reps) == 1) {
+        repID <- P(sim)$reps
+      } else if (grepl("rep", outputPath(sim))) {
+        repID <- stringr::str_extract(outputPath(sim), "rep[0-9].*") |>
+          stringr::str_remove("rep") |>
+          as.integer()
+      } else {
+        repID <- NA_integer_
+      }
+      if (!is.null(sim[["burnSummary"]])) {
+        fs <- copy(sim[["burnSummary"]])
+        fs[, `:=`(
+          simArea = P(sim)$.studyAreaName,
+          size = N, ## use number of pixels (N) instead of areaBurned
+          maxSize = NA_integer_, ## NOTE: no "target" or "expected" fire size w/ scfm nor fS
+          rep = repID,
+          ## LandMine emits these; scfm and fireSense have no notion of a retried fire. Declared
+          ## NA rather than omitted so every fire model writes the SAME schema -- arrow unifies
+          ## schemas across the per-replicate parquet files, and a mixed set would fail to open.
+          fireID = NA_integer_,
+          attempt = NA_integer_,
+          targetSize = NA_real_
+        )]
+        set(fs, NULL, c("areaBurned", "igLoc", "grp", "PolyID"), NULL)
+        setcolorder(fs, c("simArea", "rep", "year", "size", "maxSize"))
+        setnames(fs, old = c("size", "maxSize"), new = c("simSize", "expSize"))
+      } else if (!is.null(sim[["fireSizes"]])) {
+        fs <- rbindlist(sim[["fireSizes"]], idcol = "year")
+        fs[, `:=`(simArea = P(sim)$.studyAreaName, rep = repID)]
+        setcolorder(fs, c("simArea", "rep", "year", "size", "maxSize"))
+        setnames(fs, old = c("size", "maxSize"), new = c("simSize", "expSize"))
+      } else {
+        stop("cumulative fire summary object not found")
+      }
+
+      ffs <- file.path(outputPath(sim), "burnSummaries_fireSizes.csv")
+      data.table::fwrite(fs, file = ffs)
+
+      sim <- registerOutputs(ffs, sim)
+
+      ## also publish as a parquet partition so multi mode reads all reps as one lazy Arrow dataset
+      ## (fireregimetools::open_burn_dataset) instead of rbind-ing per-rep CSVs into memory.
+      fireregimetools::write_burn_parquet(
+        as.data.frame(fs),
+        file.path(outputPath(sim), "burnSummaries_fireSizes"),
+        replicate = repID
+      )
     },
     summary = {
       sim <- FireSummaries(sim)
@@ -82,91 +190,179 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
     plot = {
       plotFun(sim)
     },
-    upload = {
-      # ! ----- EDIT BELOW ----- ! #
-      browser() ## TODO
-      mod$files2upload <- set_names(mod$files2upload, basename(mod$files2upload))
+    save_single = {
+      padYear <- paddedFloatToChar(time(sim), padL = ceiling(log10(end(sim) + 1)))
 
-      gid <- as_id(sim$uploadTo[[P(sim)$.studyAreaName]])
-      prevUploaded <- drive_ls(gid)
-      toUpload <- mod$files2upload[!(basename(mod$files2upload) %in% prevUploaded$name)]
-      uploaded <- map(toUpload, ~ drive_upload(.x, path = gid))
-      # ! ----- STOP EDITING ----- ! #
+      ## objects to save during simulation --------------------------------------------------------
+      times_during <- c(start(sim), end(sim), mod$analysesOutputsTimes) |> unique() |> sort()
+
+      ## fmt: skip
+      if (time(sim) %in% times_during) {
+        f_rstTimeSinceFire <- file.path(outputPath(sim), paste0("rstTimeSinceFire_year", padYear, ".tif"))
+        terra::writeRaster(sim$rstTimeSinceFire, f_rstTimeSinceFire, datatype = "INT2U", overwrite = TRUE)
+        sim <- registerOutputs(f_rstTimeSinceFire, sim)
+
+        if (time(sim) >= P(sim)$summaryPeriod[1] && time(sim) < P(sim)$summaryPeriod[2]) {
+          sim <- scheduleEvent(sim, time(sim) + P(sim)$summaryInterval, "burnSummaries", "save_single", .last())
+        }
+      }
+
+      ## objects to save at end of simulation -----------------------------------------------------
+      if (time(sim) == end(sim)) {
+        f_burnMap <- file.path(outputPath(sim), paste0("burnMap_year", padYear, ".tif"))
+        terra::writeRaster(sim$burnMap, f_burnMap, datatype = "INT2U", overwrite = TRUE)
+        sim <- registerOutputs(f_burnMap, sim)
+
+        f_flammableMap <- file.path(outputPath(sim), paste0("flammableMap_year", padYear, ".tif"))
+        terra::writeRaster(sim$flammableMap, f_flammableMap, datatype = "INT2U", overwrite = TRUE)
+        sim <- registerOutputs(f_flammableMap, sim)
+      }
     },
-    warning(paste("Undefined event type: \'", current(sim)[1, "eventType", with = FALSE],
-                  "\' in module \'", current(sim)[1, "moduleName", with = FALSE], "\'", sep = ""))
+    noEventWarning(sim)
   )
   return(invisible(sim))
 }
 
-## event functions
-#   - keep event functions short and clean, modularize by calling subroutines from section below.
+## event functions ------------------------------------------------------------------
 
-### template initialization
-Init <- function(sim) {
-  # # ! ----- EDIT BELOW ----- ! #
+InitSingle <- function(sim) {
+  if (is.null(sim[["flammableMap"]])) {
+    ## fireSense uses `flammableRTM`
+    stopifnot(suppliedElsewhere("flammableRTM", sim))
+
+    sim <- objectSynonyms(sim, list(c("flammableRTM", "flammableMap")))
+  }
+
+  if (is.null(sim$rstTimeSinceFire)) {
+    ## fireSense uses `nonForest_timeSinceDisturbance`
+    if (!is.null(sim$nonForest_timeSinceDisturbance)) {
+      sim$rstTimeSinceFire <- reproducible::postProcess(
+        sim$nonForest_timeSinceDisturbance,
+        to = sim$flammableMap
+      )
+    } else {
+      sim$rstTimeSinceFire <- LandR::prepInputsStandAgeMap(
+        dataSource = "SCANFI",
+        dataYear = P(sim)$dataYear,
+        ageFun = "terra::rast",
+        cropTo = sim$flammableMap,
+        maskTo = sim$flammableMap,
+        destinationPath = inputPath(sim)
+      )
+
+      ## non-flammable areas are permanent
+      sim$rstTimeSinceFire[sim$flammableMap[] == 0L] <- NA
+      sim$rstTimeSinceFire[] <- as.integer(sim$rstTimeSinceFire[])
+    }
+  }
+
+  ## sanity check
+  terra::compareGeom(
+    sim$rstCurrentBurn,
+    sim$flammableMap,
+    sim$rstTimeSinceFire,
+    crs = TRUE,
+    ext = TRUE,
+    rowcol = TRUE,
+    res = TRUE
+  )
+
+  return(invisible(sim))
+}
+
+InitMulti <- function(sim) {
+  ## check for necessary output files -----------------------------------------------
   allReps <- sprintf("rep%02d", P(sim)$reps)
-  mod$files2upload <- list()
-  flammableMap <- NULL
-  pixelRes <- NULL
+  padL <- ceiling(log10(P(sim)$simTimes[2] + 1))
+  padYearStart <- paddedFloatToChar(P(sim)$simTimes[1], padL = padL)
+  padYearEnd <- paddedFloatToChar(P(sim)$simTimes[2], padL = padL)
+
+  ## all reps have same flammable map
+  flm <- file.path(outputPath(sim), allReps[1], paste0("flammableMap_year", padYearEnd, ".tif"))
+
+  stopifnot(file.exists(flm))
+
+  flammableMap <- terra::rast(flm)
+  pixelSize <- terra::res(flammableMap) ## keep both x and y dimensions
 
   burnMaps <- lapply(allReps, function(rep) {
     message(paste("Loading burn maps for rep", rep, "..."))
-    fsim <- file.path(outputPath(sim), rep,
-                      sprintf("%s_%04d.qs", P(sim)$simOutPrefix, P(sim)$simTimes[2]))
-    if (!file.exists(fsim)) {
-      fsim <- paste0(tools::file_path_sans_ext(fsim), ".rds") ## fallback to rds if qs not used
-    }
+    fbm <- file.path(outputPath(sim), rep, paste0("burnMap_year", padYearEnd, ".tif"))
 
-    stopifnot(file.exists(fsim))
+    stopifnot(file.exists(fbm))
 
-    tmpSim <- suppressMessages(loadSimList(fsim))
-
-    if (rep == allReps[1]) {
-      ## all reps have same flammable map
-      flammableMap <<- tmpSim[["rstFlammable"]]
-      pixelRes <<- res(tmpSim[["rasterToMatch"]])
-    }
-
-    ## NOTE: fire models differ in their naming scheme for cumul burn maps
-    ## - LandMine uses `rstCurrentBurnCumulative`;
-    ## - fireSense uses `burnMap`;
-    ## - scfm use `burnMap`;
-    cumulBurnMap <- if (!is.null(tmpSim[["rstCurrentBurnCumulative"]])) {
-      tmpSim[["rstCurrentBurnCumulative"]]
-    } else if (!is.null(tmpSim[["burnMap"]])) {
-      tmpSim[["burnMap"]]
-    } else {
-      stop("not sure which object is used for cumulative burn map")
-    }
+    cumulBurnMap <- terra::rast(fbm)
 
     ## sanity check
-    terra::compareGeom(cumulBurnMap, tmpSim[["rstFlammable"]], res = TRUE)
+    terra::compareGeom(cumulBurnMap, flammableMap, res = TRUE)
 
     ## mean annual cumulative burn map
-    cumulBurnMap / (end(tmpSim) - start(tmpSim))
+    cumulBurnMap / (P(sim)$simTimes[2] - P(sim)$simTimes[1])
   }) |>
     terra::rast() |>
     terra::app(sum, na.rm = TRUE)
 
   meanAnnualCumulBurnMap <- burnMaps / length(allReps)
 
-  firePolys <- Cache(
-    prepInputs,
-    url = "https://cwfis.cfs.nrcan.gc.ca/downloads/nfdb/fire_poly/current_version/NFDB_poly.zip",
-    fun = "sf::st_read",
-    destinationPath = inputPath(sim),
-    targetFile = "NFDB_poly_20210707.shp" ## TODO: this shouldn't be needed; needs to be updated
-  ) |>
-    sf::st_cast("MULTIPOLYGON") |>
-    sf::st_transform(crs(flammableMap))
+  ## Observed fire perimeters: NBAC (National Burned Area Composite -- satellite-derived,
+  ## 1972-present, the preferred source) supplemented with NFDB polygons ONLY for years
+  ## NBAC does not cover. Older NFDB perimeters are aerial sketches that overestimate
+  ## burned area, so NBAC is authoritative wherever it exists. Both are national CWFIS
+  ## downloads, harmonised (tolerant YEAR/SIZE_HA columns) + clipped to the sim grid via
+  ## fireregimetools::fetch_nbac_polys() / fetch_nfdb_polys().
+  message("preparing historical cumulative burn map using NBAC perimeters (+ NFDB backfill)...")
+  firePolys <- {
+    dst <- inputPath(sim)
 
-  fireYears <- firePolys[firePolys$YEAR > 0, ][["YEAR"]] |> unique() |> sort()
-  meanAnnualCumulBurnMapHistoric <- terra::rasterize(firePolys, flammableMap, field = "YEAR", fun = "count")
+    ## fireregimetools fetches + harmonises both archives: each is downloaded once per `dest`
+    ## (with R's 60 s timeout raised -- it silently truncates a 1.2 GB transfer -- and staged
+    ## through a `.part` file), and an extraction is verified file-by-file against the archive
+    ## manifest before it is reused. That guard is not optional here: an interrupted extraction
+    ## left the 1.88 GB NBAC .shp at 567 MB, GDAL logged 74,178 read errors, and sf::st_read()
+    ## still returned the full feature count (the .shx index was intact), so these historic
+    ## summaries were once built from ~30% of the record with nothing failing.
+    ## fire_years is left at its default (NULL): keep every year the records contain.
+    nbac <- fireregimetools::fetch_nbac_polys(flammableMap, dest = dst)
+    nfdb <- fireregimetools::fetch_nfdb_polys(flammableMap, dest = dst)
+
+    ## NBAC is authoritative; add NFDB polygons only for the years NBAC does not cover.
+    nbacYears <- sort(unique(nbac$YEAR))
+    backfill <- tidyterra::filter(nfdb, !(YEAR %in% !!nbacYears))
+    if (nrow(backfill) > 0) {
+      message(sprintf(
+        "  NBAC covers %d-%d; backfilling %d NFDB-only year(s): %s",
+        min(nbacYears), max(nbacYears), length(unique(backfill$YEAR)),
+        paste(sort(unique(backfill$YEAR)), collapse = ", ")
+      ))
+      tidyterra::bind_spat_rows(nbac[, "YEAR"], backfill[, "YEAR"])
+    } else {
+      nbac[, "YEAR"]
+    }
+  }
+
+  fireYears <- tidyterra::filter(firePolys, YEAR > 0) |> dplyr::pull("YEAR") |> unique() |> sort()
+  meanAnnualCumulBurnMapHistoric <- terra::rasterize(
+    firePolys,
+    flammableMap,
+    field = "YEAR",
+    fun = "count"
+  )
   meanAnnualCumulBurnMapHistoric <- meanAnnualCumulBurnMapHistoric / length(fireYears)
+  f_meanAnnualCumulBurnMapHistoric <- file.path(
+    outputPath(sim),
+    "meanAnnualCumulBurnMapHistoric.tif"
+  )
+  terra::writeRaster(
+    meanAnnualCumulBurnMapHistoric,
+    f_meanAnnualCumulBurnMapHistoric,
+    overwrite = TRUE
+  )
+  sim <- registerOutputs(f_meanAnnualCumulBurnMapHistoric, sim)
+  message("...done")
 
-  nonFlammable <- which(is.na(terra::values(flammableMap, mat = FALSE)) |
-                          terra::values(flammableMap, mat = FALSE) == 0)
+  nonFlammable <- which(
+    is.na(terra::values(flammableMap, mat = FALSE)) | terra::values(flammableMap, mat = FALSE) == 0
+  )
   if (length(nonFlammable) > 0) {
     meanAnnualCumulBurnMap[nonFlammable] <- NA
     meanAnnualCumulBurnMapHistoric[nonFlammable] <- NA
@@ -176,7 +372,7 @@ Init <- function(sim) {
   mod$flammableMap <- flammableMap
   mod$meanAnnualCumulBurnMap <- meanAnnualCumulBurnMap
   mod$meanAnnualCumulBurnMapHistoric <- meanAnnualCumulBurnMapHistoric
-  mod$pixelRes <- pixelRes
+  mod$pixelSize <- pixelSize
 
   # ! ----- STOP EDITING ----- ! #
 
@@ -185,43 +381,27 @@ Init <- function(sim) {
 
 FireSummaries <- function(sim) {
   allReps <- sprintf("rep%02d", P(sim)$reps)
+  padL <- ceiling(log10(P(sim)$simTimes[2] + 1))
+  padYearStart <- paddedFloatToChar(P(sim)$simTimes[1], padL = padL)
+  padYearEnd <- paddedFloatToChar(P(sim)$simTimes[2], padL = padL)
 
   studyAreaName <- P(sim)$.studyAreaName
-  outputDir <- outputPath(sim)
 
-  sim$fireSizes <- lapply(allReps, function(rep) {
-    fsim <- file.path(outputPath(sim), rep,
-                      sprintf("%s_%04d.qs", P(sim)$simOutPrefix, P(sim)$simTimes[2]))
-    if (!file.exists(fsim)) {
-      fsim <- paste0(tools::file_path_sans_ext(fsim), ".rds") ## fallback to rds if qs not used
-    }
+  ## read every replicate's fire-size parquet partition as one lazy Arrow dataset;
+  ## open_burn_dataset() skips reps with no fires / missing output rather than erroring.
+  roots <- file.path(outputPath(sim), allReps, "burnSummaries_fireSizes")
+  ds <- fireregimetools::open_burn_dataset(roots)
+  sim$fireSizes <- if (is.null(ds)) {
+    data.table::data.table()
+  } else {
+    data.table::as.data.table(dplyr::collect(ds))
+  }
 
-    stopifnot(file.exists(fsim))
+  f_out <- file.path(outputPath(sim), paste0("burnSummaries_fireSizes_allReps.csv"))
+  data.table::fwrite(sim$fireSizes, f_out)
 
-    tmpSim <- suppressMessages(loadSimList(fsim))
-
-    if (!is.null(tmpSim[["burnSummary"]])) {
-      fs <- copy(tmpSim[["burnSummary"]])
-      fs[, `:=`(simArea = studyAreaName,
-                size = N, ## use number of pixels (N) instead of areaBurned
-                maxSize = NA_integer_, ## NOTE: no "target" or "expected" fire size w/ scfm nor fS
-                rep = as.integer(substr(rep, 4, 5)))]
-      set(fs, NULL, c("areaBurned", "igLoc", "grp", "PolyID"), NULL)
-      setcolorder(fs, c("simArea", "rep", "year", "size", "maxSize"))
-      setnames(fs, old = c("size", "maxSize"), new = c("simSize", "expSize"))
-    } else if (!is.null(tmpSim[["fireSizes"]])) {
-      fs <- rbindlist(tmpSim[["fireSizes"]], idcol = "year")
-      fs[, `:=`(simArea = studyAreaName, rep = rep)]
-      setcolorder(fs, c("simArea", "rep", "year", "size", "maxSize"))
-      setnames(fs, old = c("size", "maxSize"), new = c("simSize", "expSize"))
-    } else {
-      NULL
-    }
-  }) |>
-    rbindlist()
-
-  f <- file.path(outputDir, paste0("burnSummaries_fireSizes.csv"))
-  fwrite(sim$fireSizes, f) ## TODO: add this file to list of outputs
+  ## TODO: add this file to list of outputs
+  sim <- registerOutputs(f_out, sim)
 
   return(invisible(sim))
 }
@@ -229,189 +409,183 @@ FireSummaries <- function(sim) {
 ### template for plot events
 plotFun <- function(sim) {
   # ! ----- EDIT BELOW ----- ! #
-
-  ## TODO: use Plots
   studyAreaName <- P(sim)$.studyAreaName
-  pixelSizeHa <- prod(mod$pixelRes) / 10^4
 
   ## cumulative burn maps
-  ggCumulBurnMapExp <- rasterVis::levelplot(
-    mod$meanAnnualCumulBurnMapHistoric,
-    main = paste("Historic mean annual cumulative burn map for", studyAreaName),
-    margin = FALSE,
-    par.settings = magmaTheme ## TODO: use decent colour scheme
-  )
+  use_palette = "muted" # "bl_yl_rd"
 
-  ggCumulBurnMapSim <- rasterVis::levelplot(
-    mod$meanAnnualCumulBurnMap,
-    main = paste("Simulated mean annual cumulative burn map for", studyAreaName),
-    margin = FALSE,
-    par.settings = magmaTheme ## TODO: use decent colour scheme
-  )
+  ggCumulBurnMapExp <- ggplot2::ggplot() +
+    tidyterra::geom_spatraster(data = mod$meanAnnualCumulBurnMapHistoric) +
+    tidyterra::scale_fill_whitebox_c(palette = use_palette) +
+    ggplot2::theme_bw() +
+    ggspatial::annotation_north_arrow(
+      location = "bl",
+      which_north = "true",
+      pad_x = ggplot2::unit(0.25, "in"),
+      pad_y = ggplot2::unit(0.25, "in"),
+      style = north_arrow_fancy_orienteering
+    ) +
+    ggplot2::xlab("Longitude") +
+    ggplot2::ylab("Latitude") +
+    ggplot2::ggtitle(paste("Historic mean annual cumulative burn map for", studyAreaName))
+
+  ggCumulBurnMapSim <- ggplot2::ggplot() +
+    tidyterra::geom_spatraster(data = mod$meanAnnualCumulBurnMap) +
+    tidyterra::scale_fill_whitebox_c(palette = use_palette) +
+    ggplot2::theme_bw() +
+    ggspatial::annotation_north_arrow(
+      location = "bl",
+      which_north = "true",
+      pad_x = ggplot2::unit(0.25, "in"),
+      pad_y = ggplot2::unit(0.25, "in"),
+      style = north_arrow_fancy_orienteering
+    ) +
+    ggplot2::xlab("Longitude") +
+    ggplot2::ylab("Latitude") +
+    ggplot2::ggtitle(paste("Simulated mean annual cumulative burn map for", studyAreaName))
 
   if ("png" %in% P(sim)$.plots) {
     fggCumulBurnMap <- file.path(figurePath(sim), "cumulative_burn_maps.png")
-    png(fggCumulBurnMap, height = 1000, width = 2000)
-    gridExtra::grid.arrange(ggCumulBurnMapExp, ggCumulBurnMapSim, ncol = 2, nrow = 1)
-    dev.off()
+    ggCumulBurnMap <- (ggCumulBurnMapExp | ggCumulBurnMapSim)
+    ggplot2::ggsave(fggCumulBurnMap, ggCumulBurnMap, height = 10, width = 20, type = "cairo")
+    sim <- registerOutputs(fggCumulBurnMap, sim)
   }
 
   ## fire size histograms w/ median fire sizes
+  pixelSizeHa <- prod(mod$pixelSize) / 10^4
+
   subsetDT <- sim$fireSizes[simArea == studyAreaName & (expSize > 0 | simSize > 0), ]
 
-  subsetDT[, expSizeHa := expSize * pixelSizeHa]
-  subsetDT[, simSizeHa := simSize * pixelSizeHa]
+  ## scfm and fireSense don't set target fire sizes, but LandMine does
+  fireModelUsesTargetSize <- isFALSE(all(is.na(subsetDT$expSize)))
 
-  subsetDT[, logExpSize := log(expSize)]
-  subsetDT[, logSimSize := log(simSize)]
-
-  subsetDT[, logExpSizeHa := log(expSize * pixelSizeHa)]
-  subsetDT[, logSimSizeHa := log(simSize * pixelSizeHa)]
-
-  ## per Dave's original email:
-  ## > What I would like is both the number of disturbances on the y axis,
-  ## > and the area of disturbances on a second y-axis graph.
-  ## Per Eliot: x-axis uses same bins as histogram, with y-axis of median area burned per bin
-
-  maxLogExpSizeHa <- max(subsetDT$logExpSizeHa)
-  maxLogSimSizeHa <- max(subsetDT$logSimSizeHa)
-
-  breaks <- seq(0.0, ceiling(max(maxLogExpSizeHa, maxLogSimSizeHa, na.rm = TRUE) / 0.5) * 0.5, 0.5)
-
-  hexp <- hist(subsetDT$logExpSizeHa, breaks = breaks, plot = FALSE)
-  hsim <- hist(subsetDT$logSimSizeHa, breaks = breaks, plot = FALSE)
-
-  countsExp <- hexp$counts
-  countsSim <- hsim$counts
-
-  subsetDT[, binIDexp := cut(logExpSizeHa, hexp$breaks)]
-  subsetDT[, binIDsim := cut(logSimSizeHa, hsim$breaks)]
-
-  summaryExpDT <- subsetDT[, lapply(.SD, stats::median, na.rm = TRUE), by = binIDexp, .SDcols = "expSizeHa"]
-  summarySimDT <- subsetDT[, lapply(.SD, stats::median, na.rm = TRUE), by = binIDsim, .SDcols = "simSizeHa"]
-  setnames(summaryExpDT, "expSizeHa", "medExpSizeHa")
-  setnames(summarySimDT, "simSizeHa", "medSimSizeHa")
-
-  summaryExpDT <- summaryExpDT[, medLogExpSizeHa := log(medExpSizeHa)]
-  summarySimDT <- summarySimDT[, medLogSimSizeHa := log(medSimSizeHa)]
-
-  midsExp <- cbind(
-    as.numeric( sub("\\((.+),.*", "\\1", summaryExpDT$binIDexp) ),
-    as.numeric( sub("[^,]*,([^]]*)\\]", "\\1", summaryExpDT$binIDexp) )
-  ) |>
-    rowMeans()
-  summaryExpDT <- summaryExpDT[, midsExp := midsExp]
-
-  midsSim <- cbind(
-    as.numeric( sub("\\((.+),.*", "\\1", summarySimDT$binIDsim) ),
-    as.numeric( sub("[^,]*,([^]]*)\\]", "\\1", summarySimDT$binIDsim) )
-  ) |>
-    rowMeans()
-  summarySimDT <- summarySimDT[, midsSim := midsSim]
-
-  scaleFactorExp <- max(countsExp) / maxLogExpSizeHa
-  scaleFactorSim <- max(countsSim) / maxLogSimSizeHa
-
-  y1col <- "grey20"
-  y2col <- "darkred"
-  y1lab <- "Total number of fires across all simulated years"
-  y2lab <- "Median log[fireSize] (ha)"
-  x_lab <- "log[fireSize] (ha)"
-
-  ggHistExp <- ggplot(subsetDT, aes(x = logExpSizeHa)) +
-    geom_histogram(breaks = breaks, alpha = 0.5, fill = y1col) +
-    stat_summary_bin(data = summaryExpDT,
-                     mapping = aes(x = midsExp, y = medLogExpSizeHa * scaleFactorExp),
-                     fun = "identity", geom = "point", breaks = breaks, col = y2col) +
-    scale_y_continuous(y1lab, sec.axis = sec_axis(~ . / scaleFactorExp , name = y2lab)) +
-    xlab(x_lab) +
-    ggtitle(paste("Total expected number and size of fires in", studyAreaName)) +
-    theme_bw() +
-    theme(
-      axis.title.y.left = element_text(color = y1col),
-      axis.text.y.left = element_text(color = y1col),
-      axis.title.y.right = element_text(color = y2col),
-      axis.text.y.right = element_text(color = y2col)
-    )
-
-  ggHistSim <- ggplot(subsetDT, aes(x = logSimSizeHa)) +
-    geom_histogram(breaks = breaks, alpha = 0.5, fill = y1col) +
-    stat_summary_bin(data = summarySimDT,
-                     mapping = aes(x = midsSim, y = medLogSimSizeHa * scaleFactorSim),
-                     fun = "identity", geom = "point", breaks = breaks, col = y2col) +
-    scale_y_continuous(y1lab, sec.axis = sec_axis(~ . / scaleFactorSim , name = y2lab)) +
-    xlab(x_lab) +
-    ggtitle(paste("Total simulated number and size of fires in", studyAreaName)) +
-    theme_bw() +
-    theme(
-      axis.title.y.left = element_text(color = y1col),
-      axis.text.y.left = element_text(color = y1col),
-      axis.title.y.right = element_text(color = y2col),
-      axis.text.y.right = element_text(color = y2col)
-    )
-
-  if ("png" %in% P(sim)$.plots) {
-    fggHistExp <- file.path(figurePath(sim), "expected_number_size_fires.png")
-    ggsave(fggHistExp, ggHistExp, height = 10, width = 10, type = "cairo")
-
-    fggHistSim <- file.path(figurePath(sim), "simulated_number_size_fires.png")
-    ggsave(fggHistSim, ggHistSim, height = 10, width = 10, type = "cairo")
+  if (isTRUE(fireModelUsesTargetSize)) {
+    subsetDT[, expSizeHa := expSize * pixelSizeHa]
   }
 
-  ## exp vs sim fire sizes
-  ggExpVsSim <- ggplot(subsetDT, aes(x = expSizeHa, y = simSizeHa)) +
-    geom_smooth(method = lm) +
-    scale_x_continuous(limits = c(0, NA)) +
-    scale_y_continuous(limits = c(0, NA)) +
-    xlab("Expected fire size (ha)") +
-    ylab("Simulated fire size (ha)") +
-    ggtitle(paste("Expected vs. simulated fire sizes in", studyAreaName)) +
-    theme_bw() +
-    geom_abline(slope = 1, lty = "dotted")
+  subsetDT[, simSizeHa := simSize * pixelSizeHa]
 
-  ggExpVsSimHex <- ggplot(subsetDT, aes(x = expSizeHa, y = simSizeHa)) +
-    geom_hex(bins = 50) +
-    xlab("Expected fire size (ha)") +
-    ylab("Simulated fire size (ha)") +
-    ggtitle(paste("Expected vs. simulated fire sizes in", studyAreaName)) +
-    theme_bw() +
-    geom_abline(slope = 1, lty = "dotted")
+  ## fire-size distribution (per Dave's email / Eliot): number of fires per log-size bin, with the
+  ## median log fire size per bin overlaid on a secondary axis. fireregimetools::fire_size_histogram()
+  ## takes raw sizes (ha) and logs internally, replacing the bespoke hist() + stat_summary_bin() code.
+  ggHistSim <- fireregimetools::fire_size_histogram(
+    subsetDT,
+    size_col = "simSizeHa",
+    size_unit = "ha",
+    title = paste("Total simulated number and size of fires in", studyAreaName)
+  )
+
+  if (isTRUE(fireModelUsesTargetSize)) {
+    ggHistExp <- fireregimetools::fire_size_histogram(
+      subsetDT,
+      size_col = "expSizeHa",
+      size_unit = "ha",
+      title = paste("Total expected number and size of fires in", studyAreaName)
+    )
+  }
 
   if ("png" %in% P(sim)$.plots) {
-    ## NOTE: keep 1:1 aspect ratio on these plots
-    fggExpVsSim <- file.path(figurePath(sim), "exp_vs_sim_fire_sizes.png")
-    ggsave(filename = fggExpVsSim, plot = ggExpVsSim, height = 10, width = 10, type = "cairo")
+    if (isTRUE(fireModelUsesTargetSize)) {
+      fggHistExp <- file.path(figurePath(sim), "expected_number_size_fires.png")
+      ggplot2::ggsave(fggHistExp, ggHistExp, height = 10, width = 10, type = "cairo")
+      sim <- registerOutputs(fggHistExp, sim)
+    }
 
-    fggExpVsSimHex <- file.path(figurePath(sim), "exp_vs_sim_fire_sizes_hex.png")
-    ggsave(filename = fggExpVsSimHex, plot = ggExpVsSimHex, height = 10, width = 10, type = "cairo")
+    fggHistSim <- file.path(figurePath(sim), "simulated_number_size_fires.png")
+    ggplot2::ggsave(fggHistSim, ggHistSim, height = 10, width = 10, type = "cairo")
+    sim <- registerOutputs(fggHistSim, sim)
+  }
+
+  if (isTRUE(fireModelUsesTargetSize)) {
+    ## exp vs sim fire sizes
+    ggExpVsSim <- ggplot2::ggplot(subsetDT, ggplot2::aes(x = expSizeHa, y = simSizeHa)) +
+      ggplot2::geom_smooth(method = lm) +
+      ggplot2::scale_x_continuous(limits = c(0, NA)) +
+      ggplot2::scale_y_continuous(limits = c(0, NA)) +
+      ggplot2::xlab("Expected fire size (ha)") +
+      ggplot2::ylab("Simulated fire size (ha)") +
+      ggplot2::ggtitle(paste("Expected vs. simulated fire sizes in", studyAreaName)) +
+      ggplot2::theme_bw() +
+      ggplot2::geom_abline(slope = 1, lty = "dotted")
+
+    ggExpVsSimHex <- ggplot2::ggplot(subsetDT, ggplot2::aes(x = expSizeHa, y = simSizeHa)) +
+      ggplot2::geom_hex(bins = 50) +
+      ggplot2::xlab("Expected fire size (ha)") +
+      ggplot2::ylab("Simulated fire size (ha)") +
+      ggplot2::ggtitle(paste("Expected vs. simulated fire sizes in", studyAreaName)) +
+      ggplot2::theme_bw() +
+      ggplot2::geom_abline(slope = 1, lty = "dotted")
+
+    if ("png" %in% P(sim)$.plots) {
+      ## NOTE: keep 1:1 aspect ratio on these plots
+      fggExpVsSim <- file.path(figurePath(sim), "exp_vs_sim_fire_sizes.png")
+      ggplot2::ggsave(
+        filename = fggExpVsSim,
+        plot = ggExpVsSim,
+        height = 10,
+        width = 10,
+        type = "cairo"
+      )
+      sim <- registerOutputs(fggExpVsSim, sim)
+
+      fggExpVsSimHex <- file.path(figurePath(sim), "exp_vs_sim_fire_sizes_hex.png")
+      ggplot2::ggsave(
+        filename = fggExpVsSimHex,
+        plot = ggExpVsSimHex,
+        height = 10,
+        width = 10,
+        type = "cairo"
+      )
+      sim <- registerOutputs(fggExpVsSimHex, sim)
+    }
   }
 
   ## TODO: is it worth testing fire size distributions? (very slow, and plots show they're bang-on)
   # kSamples::ad.test(subsetDT$simSize, subsetDT$expSize) ## TODO: output this somewhere...
 
-  ##  track which plot files to upload
-  mod$files2upload <- append(mod$files2upload, list(
-    fggCumulBurnMap, fggHistExp, fggHistSim, fggExpVsSim, fggExpVsSimHex
-  ))
+  ## TODO: registerOutputs
+  # registerOutputs(c(fggCumulBurnMap, fggHistExp, fggHistSim, fggExpVsSim, fggExpVsSimHex), sim)
 
   # ! ----- STOP EDITING ----- ! #
   return(invisible(sim))
 }
 
 .inputObjects <- function(sim) {
-  dPath <- asPath(inputPath(sim), 1)
-  message(currentModule(sim), ": using dataPath '", dPath, "'.")
+  ## NOTE: fireSize table can be derived from 'burnSummary' or 'fireSize' objects,
+  ## so don't implement a hard requirement for either here.
+  if (P(sim)$mode == "single") {
+    stopifnot(suppliedElsewhere("burnMap", sim))
 
-  # ! ----- EDIT BELOW ----- ! #
+    ## Create the initial rstTimeSinceFire HERE (in addition to InitSingle) when
+    ## flammableMap is supplied directly, so modules that init BEFORE burnSummaries --
+    ## e.g. LandMine's Init compareGeom() -- see a non-NULL rstTimeSinceFire (this module
+    ## supersedes timeSinceFire, whose .inputObjects used to create it). fireSense supplies
+    ## flammableMap via the flammableRTM synonym in InitSingle, so this block is skipped
+    ## there (flammableMap not yet present) and InitSingle creates it as before.
+    if (is.null(sim$rstTimeSinceFire) && !is.null(sim[["flammableMap"]])) {
+      if (!is.null(sim$nonForest_timeSinceDisturbance)) {
+        sim$rstTimeSinceFire <- reproducible::postProcess(
+          sim$nonForest_timeSinceDisturbance,
+          to = sim$flammableMap
+        )
+      } else {
+        sim$rstTimeSinceFire <- LandR::prepInputsStandAgeMap(
+          rasterToMatch = sim$flammableMap, ## resample SCANFI (30 m) to the flammableMap grid
+          dataSource = "SCANFI",
+          dataYear = P(sim)$dataYear,
+          ageFun = "terra::rast",
+          maskWithRTM = TRUE,
+          destinationPath = inputPath(sim)
+        )
 
-  # ! ----- STOP EDITING ----- ! #
-  return(invisible(sim))
-}
-
-## older version of SpaDES.core used here doesn't have this function
-if (packageVersion("SpaDES.core") < "2.0.2.9001") {
-  figurePath <- function(sim) {
-    file.path(outputPath(sim), "figures", current(sim)[["moduleName"]]) |>
-      checkPath(create = TRUE)
+        ## non-flammable areas are permanent
+        sim$rstTimeSinceFire[sim$flammableMap[] == 0L] <- NA
+        sim$rstTimeSinceFire[] <- as.integer(sim$rstTimeSinceFire[])
+      }
+    }
+  } else if (P(sim)$mode == "multi") {
+    stopifnot(suppliedElsewhere("reportingPolygons", sim))
   }
+
+  return(invisible(sim))
 }
