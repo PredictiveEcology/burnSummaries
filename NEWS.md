@@ -1,4 +1,8 @@
-# burnSummaries (development version)
+# burnSummaries 1.1.0
+
+burnSummaries can now compare simulated fires with observed ones. It downloads the national fire perimeter records (NBAC, with NFDB filling earlier years) for just the study area, and builds fire-size summaries with the fireregimetools package. It works with a single simulation or with many saved replicates, and it accepts the fire outputs of scfm and fireSense as well as LandMine.
+
+Downloads of the national fire records are more reliable, and an interrupted download no longer leaves a broken file behind. The stand-age map is reused across replicates instead of rebuilt each time. A summary period outside the simulation's start and end now stops with a clear message. The module also lists every package it needs, runs after the renamed fire modules, and has automatic tests.
 
 ## Burn maps on one scale
 
