@@ -106,7 +106,8 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
       ## module does not depend on LandWebUtils::analysesOutputsTimes -- which is only
       ## loaded when a LandWeb module like NRV_summary is co-run, not in standalone
       ## mode="multi").
-      mod$analysesOutputsTimes <- start(sim) +
+      ## summaryPeriod is in simulation time (the default is start(sim) + c(700, 1000))
+      mod$analysesOutputsTimes <-
         seq(P(sim)$summaryPeriod[1], P(sim)$summaryPeriod[2], by = P(sim)$summaryInterval)
 
       if (P(sim)$mode == "single") {
@@ -117,7 +118,7 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
 
         sim <- scheduleEvent(sim, start(sim), "burnSummaries", "save_single", .last())
         ## fmt: skip
-        sim <- scheduleEvent(sim, start(sim) + P(sim)$summaryPeriod[1], "burnSummaries", "save_single", .last())
+        sim <- scheduleEvent(sim, P(sim)$summaryPeriod[1], "burnSummaries", "save_single", .last())
         sim <- scheduleEvent(sim, end(sim), "burnSummaries", "save_single", .last())
       } else if (P(sim)$mode == "multi") {
         sim <- InitMulti(sim)
