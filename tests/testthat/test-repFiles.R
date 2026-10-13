@@ -1,11 +1,12 @@
 test_that("repFiles() matches each replicate directory and file name exactly", {
   files <- file.path("out", c("rep1", "rep10", "rep2"),
                      rep(c("burnMap_year1000.tif", "burnSummaries_fireSizes.csv"), each = 3))
-  files <- c(files, "out/rep1/burnMap_year0500.tif")
+  ## other years' maps, and files in a replicate's subfolders (as outputs(sim) lists them)
+  files <- c(files, "out/rep1/burnMap_year0500.tif", "out/rep1/figures/burnMap_year1000.tif")
   repDirs <- dirnamesFromSet(files, 1:10, leafOnly = FALSE)
   expect_identical(repDirs, file.path("out", c("rep1", "rep2", "rep10")))
 
-  ## rep1 does not pick up rep10's files, and other years' maps are not counted
+  ## rep1 does not pick up rep10's files, other years' maps or files in subfolders
   expect_identical(repFiles(repDirs, "burnMap_year1000.tif", files),
                    file.path(repDirs, "burnMap_year1000.tif"))
   expect_identical(repFiles(repDirs, "burnSummaries_fireSizes.csv", files),
