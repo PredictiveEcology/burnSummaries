@@ -21,9 +21,11 @@ defineModule(sim, list(
   ## built from the study area's outline so records near a curved or reprojected edge are kept. `archive` is not called here, but
   ## fireregimetools uses libarchive for extraction when it is installed, which handles the zip64
   ## archives R's internal unzip cannot -- so keep it available.
-  reqdPkgs = list("archive", "data.table", "dplyr", "fs", "PredictiveEcology/LandR@development", "FOR-CAST/fireregimetools@main (>= 0.1.0.9008)",
+  reqdPkgs = list("archive", "data.table", "dplyr", "PredictiveEcology/LandR@development",
+                  "FOR-CAST/fireregimetools@main (>= 0.1.0.9008)",
                   "ggplot2", "ggspatial", "patchwork",
-                  "reproducible", "PredictiveEcology/SpaDES.core@development (>= 3.2.1.9001)", ## dirnamesFromSet(), resolveSimYears(), padYears()
+                  "reproducible",
+                  "PredictiveEcology/SpaDES.core@development (>= 3.2.1.9002)", ## dirnamesFromSet(), resolveSimYears(), padYears()
                   "stringr", "terra", "tidyterra"),
   parameters = bindrows(
     defineParameter("dataYear", "integer", 2020L, NA, NA,
@@ -70,9 +72,9 @@ defineModule(sim, list(
                  desc = paste("Fire summary table from `fireSense_burn` or `scfm`.",
                               "One of `burnSummary` or `fireSizes` is required in single mode.")),
     expectsInput("firePolys", "list", sourceURL = NA,
-                 paste0("Optional. This module will load this if it does not exist. ", 
-                        "List of sf polygon objects representing annual fire polygons.",
-                        "List must be named with followign convention: `year<numeric year>`")),
+                 desc = paste("Optional, multi mode. List of `SpatVector` polygons of observed fires,",
+                              "each with a `YEAR` column. If not supplied, NBAC perimeters",
+                              "(with NFDB backfill) are downloaded.")),
     expectsInput("fireSizes", "list",
                  desc = paste("Fire sizes summary tables from LandMine.",
                               "One of `burnSummary` or `fireSizes` is required in single mode.")),
@@ -80,8 +82,9 @@ defineModule(sim, list(
                  desc = paste("Binary flammability map.",
                               "Required in single mode.")),
     expectsInput("outputsDF",  "data.table",
-                 desc = paste("The rbindlisted outputs(sim) of all the sims being used; i.e., it ",
-                              "will contain all the files that may exist")),
+                 desc = paste("Optional, multi mode. The rbindlisted `outputs(sim)` of all the sims",
+                              "being summarised, i.e., all the files that may exist.",
+                              "If not supplied, files are read from `outputPath(sim)/rep<NN>`.")),
     expectsInput("nonForest_timeSinceDisturbance",  "SpatRaster",
                  desc = paste("map of time since last burn, with non-flammable pixels receiving `NA`.",
                               "One of `rstTimeSinceFire` or `nonForest_timeSinceDisturbance` is required in single mode.")),
@@ -125,8 +128,7 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
 
         sim <- scheduleEvent(sim, start(sim), "burnSummaries", "save_single", .last())
         ## fmt: skip
-        sim <- scheduleEvent(sim, # start(sim) + 
-                               P(sim)$summaryPeriod[1], "burnSummaries", "save_single", .last())
+        sim <- scheduleEvent(sim, start(sim) + P(sim)$summaryPeriod[1], "burnSummaries", "save_single", .last())
         sim <- scheduleEvent(sim, end(sim), "burnSummaries", "save_single", .last())
       } else if (P(sim)$mode == "multi") {
         sim <- InitMulti(sim)
@@ -281,44 +283,33 @@ InitSingle <- function(sim) {
 
 InitMulti <- function(sim) {
   ## check for necessary output files -----------------------------------------------
-
   mod$useOutputs <- NROW(sim$outputsDF) > 0
-  mod$allReps <- dirnamesFromSet(sim$outputsDF$file, P(sim)$reps)
+  mod$outputFiles <- if (mod$useOutputs) unique(sim$outputsDF$file)
+  mod$repDirs <- if (mod$useOutputs) {
+    ## the replicate directories as they are named on disk (e.g. rep1 or rep01)
+    dirnamesFromSet(mod$outputFiles, P(sim)$reps, leafOnly = FALSE)
+  } else {
+    file.path(outputPath(sim), sprintf("rep%02d", P(sim)$reps))
+  }
+  mod$allReps <- basename(mod$repDirs)
 
   ## assigned back: P(sim)$simTimes is read downstream, not just for padding
   P(sim)$simTimes <- resolveSimYears(P(sim)$simTimes, sim)
   pad <- padYears(P(sim)$simTimes)
 
   ## all reps have same flammable map
-  if (mod$useOutputs) {
-    flm <- unique(grep("flammable", sim$outputsDF$file, value = TRUE))
-    flm <- grep(mod$allReps[1], flm, value = TRUE)
-  } else {
-    flm <- file.path(outputPath(sim), mod$allReps[1], paste0("flammableMap_year", pad$end, ".tif"))
-  }
-  
+  flm <- repFiles(mod$repDirs, paste0("flammableMap_year", pad$end, ".tif"), mod$outputFiles)[1]
+
   stopifnot(file.exists(flm))
 
   flammableMap <- terra::rast(flm)
   pixelSize <- terra::res(flammableMap) ## keep both x and y dimensions
 
-  if (mod$useOutputs) {
-    burnMaps <- lapply(mod$allReps, function(rep) {
-      message(paste("Loading burn maps for rep", rep, "..."))
-      burnMaps <- unique(grep(paste0(rep, ".+burnMap"), sim$outputsDF$file, value = TRUE))
-      fs::path_rel(burnMaps, start = ".")
-    }) |> unlist()
-    
-  } else {
-    burnMaps <- lapply(mod$allReps, function(rep) {
-      message(paste("Loading burn maps for rep", rep, "..."))
-      file.path(outputPath(sim), rep, paste0("burnMap_year", pad$end, ".tif"))
-    })
-    
-  }
-  burnMaps <- Map(fbm = burnMaps[file.exists(burnMaps)], function(fbm) {
-    
-    # stopifnot(file.exists(fbm))
+  fbms <- repFiles(mod$repDirs, paste0("burnMap_year", pad$end, ".tif"), mod$outputFiles)
+  burnMaps <- Map(rep = mod$allReps, fbm = fbms, function(rep, fbm) {
+    message(paste("Loading burn maps for rep", rep, "..."))
+
+    stopifnot(file.exists(fbm))
 
     cumulBurnMap <- terra::rast(fbm)
 
@@ -339,13 +330,13 @@ InitMulti <- function(sim) {
       tidyterra::bind_spat_rows() |>
       tidyterra::mutate(YEAR = as.integer(YEAR))
   } else {
-  ## Observed fire perimeters: NBAC (National Burned Area Composite -- satellite-derived,
-  ## 1972-present, the preferred source) supplemented with NFDB polygons ONLY for years
-  ## NBAC does not cover. Older NFDB perimeters are aerial sketches that overestimate
-  ## burned area, so NBAC is authoritative wherever it exists. Both are national CWFIS
-  ## downloads, harmonised (tolerant YEAR/SIZE_HA columns) + clipped to the sim grid via
-  ## fireregimetools::fetch_nbac_polys() / fetch_nfdb_polys().
-  message("preparing historical cumulative burn map using NBAC perimeters (+ NFDB backfill)...")
+    ## Observed fire perimeters: NBAC (National Burned Area Composite -- satellite-derived,
+    ## 1972-present, the preferred source) supplemented with NFDB polygons ONLY for years
+    ## NBAC does not cover. Older NFDB perimeters are aerial sketches that overestimate
+    ## burned area, so NBAC is authoritative wherever it exists. Both are national CWFIS
+    ## downloads, harmonised (tolerant YEAR/SIZE_HA columns) + clipped to the sim grid via
+    ## fireregimetools::fetch_nbac_polys() / fetch_nfdb_polys().
+    message("preparing historical cumulative burn map using NBAC perimeters (+ NFDB backfill)...")
     dst <- inputPath(sim)
 
     ## fireregimetools fetches + harmonises both archives: each is downloaded once per `dest`
@@ -370,7 +361,8 @@ InitMulti <- function(sim) {
       ))
       tidyterra::bind_spat_rows(nbac[, "YEAR"], backfill[, "YEAR"])
     } else {
-      nbac[, "YEAR"]    }
+      nbac[, "YEAR"]
+    }
   }
 
   fireYears <- tidyterra::filter(firePolys, YEAR > 0) |> dplyr::pull("YEAR") |> unique() |> sort()
@@ -412,8 +404,23 @@ InitMulti <- function(sim) {
   return(invisible(sim))
 }
 
+## The file `fname` in each replicate directory. With `files` (the files listed in `outputsDF`),
+## the directory and file name must match exactly, so that `rep1` does not also pick up `rep10`'s
+## files; without it, the path is built from the directory.
+repFiles <- function(repDirs, fname, files = NULL) {
+  if (is.null(files)) {
+    return(file.path(repDirs, fname))
+  }
+  vapply(repDirs, function(d) {
+    f <- files[dirname(files) == d & basename(files) == fname]
+    if (length(f) != 1L) {
+      stop("expected one ", fname, " in ", d, " in outputsDF; found ", length(f))
+    }
+    f
+  }, character(1), USE.NAMES = FALSE)
+}
+
 FireSummaries <- function(sim) {
-  # allReps <- sprintf("rep%02d", P(sim)$reps)
   pad <- padYears(P(sim)$simTimes)
 
   studyAreaName <- P(sim)$.studyAreaName
@@ -421,9 +428,8 @@ FireSummaries <- function(sim) {
   if (mod$useOutputs) {
     ## registerOutputs() records the CSV; the parquet partition is not registered, so
     ## outputs(sim) is what drives this arm.
-    sim$fireSizes <- lapply(mod$allReps, function(rep) {
-      f_fireSizes <- grep(paste0(rep, ".+burnSummaries_fireSizes.csv"), sim$outputsDF$file, value = TRUE)
-      f_fireSizes <- fs::path_rel(f_fireSizes)
+    f_csvs <- repFiles(mod$repDirs, "burnSummaries_fireSizes.csv", mod$outputFiles)
+    sim$fireSizes <- lapply(f_csvs, function(f_fireSizes) {
       stopifnot(file.exists(f_fireSizes))
 
       data.table::fread(f_fireSizes)
@@ -432,7 +438,7 @@ FireSummaries <- function(sim) {
   } else {
     ## read every replicate's fire-size parquet partition as one lazy Arrow dataset;
     ## open_burn_dataset() skips reps with no fires / missing output rather than erroring.
-    roots <- file.path(outputPath(sim), mod$allReps, "burnSummaries_fireSizes")
+    roots <- file.path(mod$repDirs, "burnSummaries_fireSizes")
     ds <- fireregimetools::open_burn_dataset(roots)
     sim$fireSizes <- if (is.null(ds)) {
       data.table::data.table()
@@ -440,6 +446,7 @@ FireSummaries <- function(sim) {
       data.table::as.data.table(dplyr::collect(ds))
     }
   }
+
   f_out <- file.path(outputPath(sim), paste0("burnSummaries_fireSizes_allReps.csv"))
   data.table::fwrite(sim$fireSizes, f_out)
 
@@ -496,7 +503,7 @@ plotFun <- function(sim) {
 
   ## fire size histograms w/ median fire sizes
   pixelSizeHa <- prod(mod$pixelSize) / 10^4
-  
+
   subsetDT <- sim$fireSizes[simArea == studyAreaName & (expSize > 0 | simSize > 0), ]
 
   ## scfm and fireSense don't set target fire sizes, but LandMine does
