@@ -4,6 +4,10 @@ burnSummaries can now compare simulated fires with observed ones. It downloads t
 
 Downloads of the national fire records are more reliable, and an interrupted download no longer leaves a broken file behind. The stand-age map is reused across replicates instead of rebuilt each time. A summary period outside the simulation's start and end now stops with a clear message. The module also lists every package it needs, runs after the renamed fire modules, and has automatic tests.
 
+## Snapshots during `summaryPeriod` are saved
+
+* `summaryPeriod` is a simulation time (its default is `start(sim) + c(700, 1000)`), but `init` added `start(sim)` to it again, both when scheduling the first `save_single` snapshot and when listing the snapshot times. Unless the simulation started at time 0, the snapshots fell after the end of the run and no `rstTimeSinceFire` was saved during the summary period. Neither now adds `start(sim)`.
+
 ## Missing packages in `reqdPkgs` (`1.0.2.9013`)
 
 * `reqdPkgs` now lists `PredictiveEcology/LandR@development`: `LandR::prepInputsStandAgeMap()` needs
