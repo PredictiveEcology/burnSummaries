@@ -35,3 +35,22 @@ test_that("init stops on a supplied period outside the run", {
   expect_error(suppressMessages(SpaDES.core::spades(sim, debug = FALSE)),
                "summaryPeriod.*700.*1000.*0.*10")
 })
+
+## summaryPeriod is absolute simulation times everywhere: with start = 2020 and summaryPeriod
+## c(2020, 3020) the summary times are 2020 to 3020, not 4040 to 5040.
+test_that("summary times are the period itself, by summaryInterval", {
+  expect_equal(summaryTimes(c(2020L, 3020L), 100L), seq(2020, 3020, by = 100))
+})
+
+test_that("single-mode init schedules the period's first save at summaryPeriod[1], not start + it", {
+  r <- terra::rast(nrows = 2, ncols = 2, vals = 1L, crs = "EPSG:3978")
+  sim <- suppressMessages(SpaDES.core::simInit(
+    times = list(start = 2020, end = 3020), modules = moduleName, paths = testPaths,
+    objects = list(burnMap = r, flammableMap = r, rstTimeSinceFire = r, rstCurrentBurn = r),
+    params = list(burnSummaries = list(mode = "single", summaryPeriod = c(2720L, 3020L)))))
+  sim <- suppressMessages(SpaDES.core::spades(sim, debug = FALSE, events = list(burnSummaries = "init")))
+  ev <- SpaDES.core::events(sim)
+  saves <- ev[ev$eventType == "save_single", ]
+  expect_true(2720 %in% saves$eventTime)
+  expect_false(any(saves$eventTime > 3020))
+})
