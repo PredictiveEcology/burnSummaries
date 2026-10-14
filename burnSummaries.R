@@ -41,8 +41,10 @@ defineModule(sim, list(
                     "Simulation start and end times when running in 'multi' mode."),
     defineParameter("summaryInterval", "integer", 100L, NA, NA,
                     "simulation time interval at which to take 'snapshots' used for summary analyses"),
-    defineParameter("summaryPeriod", "integer", start(sim) + c(700L, 1000L), NA, NA,
-                    "lower and upper end of the range of simulation times used for summary analyses"),
+    defineParameter("summaryPeriod", "integer", c(NA_integer_, NA_integer_), NA, NA,
+                    paste("lower and upper end of the range of simulation times used for summary analyses.",
+                          "`NA` (the default) means the last 30% of the run, which is years 700 to 1000 of a",
+                          "1000-year run; a run shorter than 1000 years gets a message with the period chosen.")),
     defineParameter(".plots", "character", "png", NA, NA,
                     "Used by `Plots` function, which can be optionally used here."),
     defineParameter(".plotInitialTime", "numeric", start(sim), NA, NA,
@@ -98,16 +100,13 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
   switch(
     eventType,
     init = {
-      if (min(P(sim)$summaryPeriod) < start(sim) || max(P(sim)$summaryPeriod) > end(sim)) {
-        stop("summaryPeriod values are outside the range of simulation times")
-      }
+      params(sim)$burnSummaries$summaryPeriod <- resolveSummaryPeriod(P(sim)$summaryPeriod, start(sim), end(sim))
 
       ## summary output times = seq over the summary period (inlined so this generic
       ## module does not depend on LandWebUtils::analysesOutputsTimes -- which is only
       ## loaded when a LandWeb module like NRV_summary is co-run, not in standalone
       ## mode="multi").
-      mod$analysesOutputsTimes <- start(sim) +
-        seq(P(sim)$summaryPeriod[1], P(sim)$summaryPeriod[2], by = P(sim)$summaryInterval)
+      mod$analysesOutputsTimes <- summaryTimes(P(sim)$summaryPeriod, P(sim)$summaryInterval)
 
       if (P(sim)$mode == "single") {
         sim <- InitSingle(sim)
@@ -117,7 +116,7 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
 
         sim <- scheduleEvent(sim, start(sim), "burnSummaries", "save_single", .last())
         ## fmt: skip
-        sim <- scheduleEvent(sim, start(sim) + P(sim)$summaryPeriod[1], "burnSummaries", "save_single", .last())
+        sim <- scheduleEvent(sim, P(sim)$summaryPeriod[1], "burnSummaries", "save_single", .last())
         sim <- scheduleEvent(sim, end(sim), "burnSummaries", "save_single", .last())
       } else if (P(sim)$mode == "multi") {
         sim <- InitMulti(sim)
@@ -224,6 +223,41 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
 }
 
 ## event functions ------------------------------------------------------------------
+
+#' Times at which to summarise: `summaryPeriod` is in simulation times, so these are too
+#'
+#' @param period The resolved `summaryPeriod`.
+#' @param interval The `summaryInterval` parameter.
+#'
+#' @return A numeric vector of simulation times.
+summaryTimes <- function(period, interval) seq(period[1], period[2], by = interval)
+
+#' Resolve `summaryPeriod` against the run's times
+#'
+#' `NA` means the last 30% of the run: years 700 to 1000 of a 1000-year run, and the last 30% of a
+#' shorter one (a run longer than 1000 years still uses 700 to 1000). A period outside the run is
+#' an error.
+#'
+#' @param period The `summaryPeriod` parameter, length 2, `NA` for the default.
+#' @param start,end Start and end times of the simulation.
+#'
+#' @return An integer vector of length 2.
+resolveSummaryPeriod <- function(period, start, end) {
+  if (anyNA(period)) {
+    runLength <- end - start
+    period <- if (runLength >= 1000) start + c(700L, 1000L) else c(start + round(0.7 * runLength), end)
+    if (runLength < 1000) {
+      message("burnSummaries: `summaryPeriod` was not set and the run (", start, " to ", end,
+              ") is shorter than 1000 years, so summaries use the last 30% of the run: ",
+              period[1], " to ", period[2], ". Set `summaryPeriod` to choose another period.")
+    }
+  }
+  if (min(period) < start || max(period) > end) {
+    stop("summaryPeriod ", period[1], " to ", period[2], " is outside the simulation times ",
+         start, " to ", end, ". Set summaryPeriod within the run's times.")
+  }
+  as.integer(period)
+}
 
 InitSingle <- function(sim) {
   if (is.null(sim[["flammableMap"]])) {
