@@ -26,7 +26,7 @@ defineModule(sim, list(
                   "ggplot2", "ggspatial", "patchwork",
                   "reproducible",
                   ## dirnamesFromSet(), resolveSimYears(), padYears()
-                  "PredictiveEcology/SpaDES.core@development (>= 3.2.1.9037)",
+                  "PredictiveEcology/SpaDES.core@development (>= 3.2.1.9038)",
                   "stringr", "terra", "tidyterra"),
   parameters = bindrows(
     defineParameter("dataYear", "integer", 2020L, NA, NA,
