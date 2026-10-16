@@ -22,6 +22,7 @@ Downloads of the national fire records are more reliable, and an interrupted dow
 ## Snapshots during `summaryPeriod` are saved
 
 * `summaryPeriod` is a simulation time (its default is `start(sim) + c(700, 1000)`), but `init` added `start(sim)` to it again, both when scheduling the first `save_single` snapshot and when listing the snapshot times. Unless the simulation started at time 0, the snapshots fell after the end of the run and no `rstTimeSinceFire` was saved during the summary period. Neither now adds `start(sim)`.
+* Needs SpaDES.core >= 3.2.1.9038 (`dirnamesFromSet()`, `resolveSimYears()`, `padYears()`; 3.2.1.9038 returns the replicate folder, not a subfolder, from `dirnamesFromSet(leafOnly = FALSE)`).
 
 ## Missing packages in `reqdPkgs` (`1.0.2.9013`)
 
