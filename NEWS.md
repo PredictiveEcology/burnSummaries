@@ -1,3 +1,8 @@
+# burnSummaries (development version)
+
+- `summaryPeriod` is now absolute simulation times everywhere. The summary times and the first `save_single` event used to add `start(sim)` to it again, so `summaryPeriod = c(2020, 3020)` in a run starting at 2020 summarised 4040 to 5040. Runs starting at 0 are unchanged.
+- `summaryPeriod` now defaults to `NA`, meaning the last 30% of the run: still years 700 to 1000 of a 1000-year run, but a shorter run summarises its own last 30% (with a message) instead of finding no summary years. A supplied `summaryPeriod` outside the run's times stops with an error naming both ranges.
+
 # burnSummaries 1.1.0
 
 burnSummaries can now compare simulated fires with observed ones. It downloads the national fire perimeter records (NBAC, with NFDB filling earlier years) for just the study area, and builds fire-size summaries with the fireregimetools package. It works with a single simulation or with many saved replicates, and it accepts the fire outputs of scfm and fireSense as well as LandMine.
