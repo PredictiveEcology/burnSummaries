@@ -4,6 +4,12 @@ burnSummaries can now compare simulated fires with observed ones. It downloads t
 
 Downloads of the national fire records are more reliable, and an interrupted download no longer leaves a broken file behind. The stand-age map is reused across replicates instead of rebuilt each time. A summary period outside the simulation's start and end now stops with a clear message. The module also lists every package it needs, runs after the renamed fire modules, and has automatic tests.
 
+## Multi mode reads replicate files from `outputsDF`
+
+* `InitMulti()` and `FireSummaries()` can take each replicate's burn map, flammable map and fire-size CSV from `outputsDF` (the combined `outputs(sim)` of the runs being summarised), matching each replicate directory and file name exactly. Without `outputsDF`, they read `outputPath(sim)/rep<NN>` as before.
+* Observed fire perimeters can be supplied as `firePolys`, a list of `SpatVector`s with a `YEAR` column, instead of being downloaded.
+* Needs SpaDES.core >= 3.2.1.9038 (`dirnamesFromSet()`, `resolveSimYears()`, `padYears()`; 3.2.1.9038 returns the replicate folder, not a subfolder, from `dirnamesFromSet(leafOnly = FALSE)`).
+
 ## Missing packages in `reqdPkgs` (`1.0.2.9013`)
 
 * `reqdPkgs` now lists `PredictiveEcology/LandR@development`: `LandR::prepInputsStandAgeMap()` needs
