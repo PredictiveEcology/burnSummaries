@@ -22,9 +22,11 @@ test_that("inputs are the expected names and classes", {
     c(
       "burnMap"                        = "SpatRaster",
       "burnSummary"                    = "data.table",
+      "firePolys"                      = "list",
       "fireSizes"                      = "list",
       "flammableMap"                   = "SpatRaster",
       "nonForest_timeSinceDisturbance" = "SpatRaster",
+      "outputsDF"                      = "data.table",
       "rstCurrentBurn"                 = "SpatRaster",
       "rstTimeSinceFire"               = "SpatRaster"
 )
