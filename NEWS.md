@@ -16,6 +16,7 @@
 * **This changes the year-0 time-since-fire file of every replicate**, and so any current-condition
   summary read from it (e.g. NRV_summary's time-since-fire age classes). The later snapshots,
   `burnMap` and `flammableMap` are unchanged.
+* In single mode `save_single` is also scheduled once when the summary period starts at the end of the simulation, instead of twice at the same time, which wasted work and broke cache reuse on reruns.
 
 # burnSummaries 1.1.0
 

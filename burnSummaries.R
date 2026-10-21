@@ -132,10 +132,11 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
         sim <- scheduleEvent(sim, start(sim), "burnSummaries", "save_single", .first() + 1)
 
         ## The other saves come at the end of their year. A time equal to start(sim) is left out: a
-        ## second year-0 save would overwrite the one above. When the summary period starts at
+        ## second year-0 save would overwrite the one above; the summary period start and the end
+        ## are each scheduled once, even when they coincide. When the summary period starts at
         ## start(sim), the save above schedules the next snapshot.
         later <- c(P(sim)$summaryPeriod[1], end(sim))
-        for (saveTime in later[later != start(sim)]) {
+        for (saveTime in unique(later[later != start(sim)])) {
           sim <- scheduleEvent(sim, saveTime, "burnSummaries", "save_single", .last())
         }
       } else if (P(sim)$mode == "multi") {
@@ -221,8 +222,10 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
         terra::writeRaster(sim$rstTimeSinceFire, f_rstTimeSinceFire, datatype = "INT2U", overwrite = TRUE)
         sim <- registerOutputs(f_rstTimeSinceFire, sim)
 
-        if (time(sim) >= P(sim)$summaryPeriod[1] && time(sim) < P(sim)$summaryPeriod[2]) {
-          sim <- scheduleEvent(sim, time(sim) + P(sim)$summaryInterval, "burnSummaries", "save_single", .last())
+        ## the end is scheduled by init: do not schedule it a second time here
+        nextSave <- time(sim) + P(sim)$summaryInterval
+        if (time(sim) >= P(sim)$summaryPeriod[1] && time(sim) < P(sim)$summaryPeriod[2] && nextSave != end(sim)) {
+          sim <- scheduleEvent(sim, nextSave, "burnSummaries", "save_single", .last())
         }
       }
 
