@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.1.0"),
+  version = list(burnSummaries = "1.1.0.9000"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -126,10 +126,18 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
         sim <- scheduleEvent(sim, start(sim), "burnSummaries", "update_tsf")
         sim <- scheduleEvent(sim, end(sim), "burnSummaries", "create_fireSizes", .last())
 
-        sim <- scheduleEvent(sim, start(sim), "burnSummaries", "save_single", .last())
-        ## fmt: skip
-        sim <- scheduleEvent(sim, P(sim)$summaryPeriod[1], "burnSummaries", "save_single", .last())
-        sim <- scheduleEvent(sim, end(sim), "burnSummaries", "save_single", .last())
+        ## Year 0 is the map the run starts from, so it is saved before update_tsf (priority 5) adds
+        ## fireTimestep to it, and after every module's init (SpaDES.core schedules those at
+        ## .first()). At .last(), the saved year 0 was the starting map + fireTimestep.
+        sim <- scheduleEvent(sim, start(sim), "burnSummaries", "save_single", .first() + 1)
+
+        ## The other saves come at the end of their year. A time equal to start(sim) is left out: a
+        ## second year-0 save would overwrite the one above. When the summary period starts at
+        ## start(sim), the save above schedules the next snapshot.
+        later <- c(P(sim)$summaryPeriod[1], end(sim))
+        for (saveTime in later[later != start(sim)]) {
+          sim <- scheduleEvent(sim, saveTime, "burnSummaries", "save_single", .last())
+        }
       } else if (P(sim)$mode == "multi") {
         sim <- InitMulti(sim)
 

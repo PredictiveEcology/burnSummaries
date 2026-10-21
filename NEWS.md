@@ -3,6 +3,20 @@
 - `summaryPeriod` is now absolute simulation times everywhere. The summary times and the first `save_single` event used to add `start(sim)` to it again, so `summaryPeriod = c(2020, 3020)` in a run starting at 2020 summarised 4040 to 5040. Runs starting at 0 are unchanged.
 - `summaryPeriod` now defaults to `NA`, meaning the last 30% of the run: still years 700 to 1000 of a 1000-year run, but a shorter run summarises its own last 30% (with a message) instead of finding no summary years. A supplied `summaryPeriod` outside the run's times stops with an error naming both ranges.
 
+## Year-0 time since fire is the starting map (`1.1.0.9000`)
+
+* In single mode, the year-0 time-since-fire map (`rstTimeSinceFire_year<start>.tif`) is now the map
+  the run started from. It was saved at `.last()`, after `update_tsf` had added `fireTimestep` at
+  `start(sim)`, so each saved value was the starting value + `fireTimestep` (1 by default). It is now
+  saved at `.first() + 1`: after every module's init, before `update_tsf`.
+* Only the saved file changes. `update_tsf` still runs at `start(sim)`, so the time since fire a fire
+  model reads in year 1 is the same as before.
+* A `summaryPeriod` that starts at `start(sim)` no longer schedules a second year-0 save, which would
+  now overwrite the starting map with the aged one.
+* **This changes the year-0 time-since-fire file of every replicate**, and so any current-condition
+  summary read from it (e.g. NRV_summary's time-since-fire age classes). The later snapshots,
+  `burnMap` and `flammableMap` are unchanged.
+
 # burnSummaries 1.1.0
 
 burnSummaries can now compare simulated fires with observed ones. It downloads the national fire perimeter records (NBAC, with NFDB filling earlier years) for just the study area, and builds fire-size summaries with the fireregimetools package. It works with a single simulation or with many saved replicates, and it accepts the fire outputs of scfm and fireSense as well as LandMine.
