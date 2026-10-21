@@ -1,6 +1,19 @@
 # burnSummaries (development version)
 
-In "single" mode the module scheduled `save_single` twice at the same time when the start, the start of the summary period or the end coincided. It now schedules it once per distinct time, which saves duplicate work and lets reruns reuse the cache.
+## Year-0 time since fire is the starting map (`1.1.0.9000`)
+
+* In single mode, the year-0 time-since-fire map (`rstTimeSinceFire_year<start>.tif`) is now the map
+  the run started from. It was saved at `.last()`, after `update_tsf` had added `fireTimestep` at
+  `start(sim)`, so each saved value was the starting value + `fireTimestep` (1 by default). It is now
+  saved at `.first() + 1`: after every module's init, before `update_tsf`.
+* Only the saved file changes. `update_tsf` still runs at `start(sim)`, so the time since fire a fire
+  model reads in year 1 is the same as before.
+* A `summaryPeriod` that starts at `start(sim)` no longer schedules a second year-0 save, which would
+  now overwrite the starting map with the aged one.
+* **This changes the year-0 time-since-fire file of every replicate**, and so any current-condition
+  summary read from it (e.g. NRV_summary's time-since-fire age classes). The later snapshots,
+  `burnMap` and `flammableMap` are unchanged.
+* In single mode `save_single` is also scheduled once when the summary period starts at the end of the simulation, instead of twice at the same time, which wasted work and broke cache reuse on reruns.
 
 # burnSummaries 1.1.0
 
