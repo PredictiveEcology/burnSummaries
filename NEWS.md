@@ -1,3 +1,7 @@
+# burnSummaries (development version)
+
+In "single" mode the module scheduled `save_single` twice at the same time when the start, the start of the summary period or the end coincided. It now schedules it once per distinct time, which saves duplicate work and lets reruns reuse the cache.
+
 # burnSummaries 1.1.0
 
 burnSummaries can now compare simulated fires with observed ones. It downloads the national fire perimeter records (NBAC, with NFDB filling earlier years) for just the study area, and builds fire-size summaries with the fireregimetools package. It works with a single simulation or with many saved replicates, and it accepts the fire outputs of scfm and fireSense as well as LandMine.

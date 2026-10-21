@@ -115,10 +115,11 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
         sim <- scheduleEvent(sim, start(sim), "burnSummaries", "update_tsf")
         sim <- scheduleEvent(sim, end(sim), "burnSummaries", "create_fireSizes", .last())
 
-        sim <- scheduleEvent(sim, start(sim), "burnSummaries", "save_single", .last())
+        ## the start, the start of the summary period and the end can coincide: schedule each time once
         ## fmt: skip
-        sim <- scheduleEvent(sim, start(sim) + P(sim)$summaryPeriod[1], "burnSummaries", "save_single", .last())
-        sim <- scheduleEvent(sim, end(sim), "burnSummaries", "save_single", .last())
+        for (tm in unique(c(start(sim), start(sim) + P(sim)$summaryPeriod[1], end(sim)))) {
+          sim <- scheduleEvent(sim, tm, "burnSummaries", "save_single", .last())
+        }
       } else if (P(sim)$mode == "multi") {
         sim <- InitMulti(sim)
 
@@ -202,8 +203,10 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
         terra::writeRaster(sim$rstTimeSinceFire, f_rstTimeSinceFire, datatype = "INT2U", overwrite = TRUE)
         sim <- registerOutputs(f_rstTimeSinceFire, sim)
 
-        if (time(sim) >= P(sim)$summaryPeriod[1] && time(sim) < P(sim)$summaryPeriod[2]) {
-          sim <- scheduleEvent(sim, time(sim) + P(sim)$summaryInterval, "burnSummaries", "save_single", .last())
+        ## the end is scheduled by init: do not schedule it a second time here
+        nextSave <- time(sim) + P(sim)$summaryInterval
+        if (time(sim) >= P(sim)$summaryPeriod[1] && time(sim) < P(sim)$summaryPeriod[2] && nextSave != end(sim)) {
+          sim <- scheduleEvent(sim, nextSave, "burnSummaries", "save_single", .last())
         }
       }
 
