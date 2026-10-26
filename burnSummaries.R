@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.1.0.9000"),
+  version = list(burnSummaries = "1.1.0.9001"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -400,7 +400,21 @@ FireSummaries <- function(sim) {
   roots <- file.path(outputPath(sim), allReps, "burnSummaries_fireSizes")
   ds <- fireregimetools::open_burn_dataset(roots)
   sim$fireSizes <- if (is.null(ds)) {
-    data.table::data.table()
+    ## No replicate had a fire, so none wrote a parquet (write_burn_parquet() skips an empty
+    ## table) and there is no schema to read. A table with no columns wrote an empty CSV and
+    ## stopped plotFun() at `simArea`, so give it the columns and types a replicate with
+    ## LandMine fires reads back: create_fireSizes' columns, plus the parquet's `replicate`.
+    data.table::data.table(
+      simArea = character(0),
+      rep = integer(0),
+      year = character(0),
+      simSize = integer(0),
+      expSize = integer(0),
+      fireID = integer(0),
+      attempt = integer(0),
+      targetSize = numeric(0),
+      replicate = integer(0)
+    )
   } else {
     data.table::as.data.table(dplyr::collect(ds))
   }
@@ -492,16 +506,23 @@ plotFun <- function(sim) {
     )
   }
 
+  ## fire_size_histogram() returns NULL when no fire has a positive size (e.g. every replicate
+  ## was fire-free), so there is no histogram to save; skip it, as the expected-size plots are
+  ## skipped for a fire model without target sizes.
   if ("png" %in% P(sim)$.plots) {
-    if (isTRUE(fireModelUsesTargetSize)) {
+    if (isTRUE(fireModelUsesTargetSize) && !is.null(ggHistExp)) {
       fggHistExp <- file.path(figurePath(sim), "expected_number_size_fires.png")
       ggplot2::ggsave(fggHistExp, ggHistExp, height = 10, width = 10, type = "cairo")
       sim <- registerOutputs(fggHistExp, sim)
     }
 
-    fggHistSim <- file.path(figurePath(sim), "simulated_number_size_fires.png")
-    ggplot2::ggsave(fggHistSim, ggHistSim, height = 10, width = 10, type = "cairo")
-    sim <- registerOutputs(fggHistSim, sim)
+    if (is.null(ggHistSim)) {
+      message("no simulated fires in ", studyAreaName, "; skipping the fire-size histogram")
+    } else {
+      fggHistSim <- file.path(figurePath(sim), "simulated_number_size_fires.png")
+      ggplot2::ggsave(fggHistSim, ggHistSim, height = 10, width = 10, type = "cairo")
+      sim <- registerOutputs(fggHistSim, sim)
+    }
   }
 
   if (isTRUE(fireModelUsesTargetSize)) {

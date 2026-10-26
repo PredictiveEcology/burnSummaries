@@ -1,5 +1,12 @@
 # burnSummaries (development version)
 
+## Multi mode runs when every replicate is fire-free (`1.1.0.9001`)
+
+* When no replicate had a fire, multi mode built a fire-size table with no columns, wrote an empty
+  `burnSummaries_fireSizes_allReps.csv`, and stopped in `plotFun()` with "Object 'simArea' not
+  found". The empty table now has the columns and types a replicate with LandMine fires reads back,
+  so the CSV gets a header, and the simulated fire-size histogram, with nothing to show, is skipped.
+
 ## Year-0 time since fire is the starting map (`1.1.0.9000`)
 
 * In single mode, the year-0 time-since-fire map (`rstTimeSinceFire_year<start>.tif`) is now the map
