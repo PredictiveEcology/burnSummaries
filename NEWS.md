@@ -1,5 +1,12 @@
 # burnSummaries (development version)
 
+## Multi mode runs when every replicate is fire-free (`1.1.0.9001`)
+
+* When no replicate had a fire, multi mode built a fire-size table with no columns, wrote an empty
+  `burnSummaries_fireSizes_allReps.csv`, and stopped in `plotFun()` with "Object 'simArea' not
+  found". The empty table now has the columns and types a replicate with LandMine fires reads back,
+  so the CSV gets a header, and the simulated fire-size histogram, with nothing to show, is skipped.
+
 - `summaryPeriod` is now absolute simulation times everywhere. The summary times and the first `save_single` event used to add `start(sim)` to it again, so `summaryPeriod = c(2020, 3020)` in a run starting at 2020 summarised 4040 to 5040. Runs starting at 0 are unchanged.
 - `summaryPeriod` now defaults to `NA`, meaning the last 30% of the run: still years 700 to 1000 of a 1000-year run, but a shorter run summarises its own last 30% (with a message) instead of finding no summary years. A supplied `summaryPeriod` outside the run's times stops with an error naming both ranges.
 
