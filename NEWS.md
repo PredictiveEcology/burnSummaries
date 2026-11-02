@@ -1,5 +1,15 @@
 # burnSummaries (development version)
 
+## Fire regime tables in multi mode
+
+* Multi mode writes `burnSummaries_fireRegime.csv`: per replicate, the number of fires, the area burned
+  per year and the largest fire (ha), plus one row for the observed record over the same flammable land.
+  It also writes `burnSummaries_fireBlocks.csv` (fires and area burned per `summaryInterval` years, per
+  replicate) and draws them in `fire_per_block.png`, with the observed burn rate for comparison.
+* New parameter `historicYears` (multi mode) limits the observed record to those years, for the
+  historic burn map and the observed fire regime. The default, `NA`, keeps every year, as before.
+* Single mode, and so what each replicate writes, is unchanged.
+
 ## Multi mode runs when every replicate is fire-free (`1.1.0.9001`)
 
 * When no replicate had a fire, multi mode built a fire-size table with no columns, wrote an empty
