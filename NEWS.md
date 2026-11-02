@@ -1,5 +1,8 @@
 # burnSummaries (development version)
 
+* `dataYear` is numeric (`2020`, was the integer `2020L`), as in the vegetation modules, and `.inputObjects` stops when another module has a different `dataYear` (`paramCheckOtherMods()` compares with `identical()`, so `2020L` would not match `2020`).
+
+
 ## Multi mode runs when every replicate is fire-free (`1.1.0.9001`)
 
 * When no replicate had a fire, multi mode built a fire-size table with no columns, wrote an empty

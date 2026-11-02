@@ -29,7 +29,7 @@ defineModule(sim, list(
                   "PredictiveEcology/SpaDES.core@development (>= 3.2.1.9038)",
                   "stringr", "terra", "tidyterra"),
   parameters = bindrows(
-    defineParameter("dataYear", "integer", 2020L, NA, NA,
+    defineParameter("dataYear", "numeric", 2020, NA, NA,
                     "data year for the SCANFI stand-age inputs used to seed rstTimeSinceFire (single mode)"),
     defineParameter("fireTimestep", "integer", 1L, NA, NA,
                     "simulation time interval between burn events"),
@@ -673,6 +673,8 @@ plotFun <- function(sim) {
 }
 
 .inputObjects <- function(sim) {
+  ## the same data year as the vegetation modules (Biomass_core, Biomass_borealDataPrep, ...)
+  paramCheckOtherMods(sim, "dataYear", ifSetButDifferent = "error")
   ## NOTE: fireSize table can be derived from 'burnSummary' or 'fireSize' objects,
   ## so don't implement a hard requirement for either here.
   if (P(sim)$mode == "single") {
