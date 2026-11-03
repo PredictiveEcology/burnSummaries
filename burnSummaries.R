@@ -25,8 +25,8 @@ defineModule(sim, list(
                   "FOR-CAST/fireregimetools@main (>= 0.1.0.9008)",
                   "ggplot2", "ggspatial", "patchwork",
                   "reproducible",
-                  ## dirnamesFromSet(), resolveSimYears(), padYears()
-                  "PredictiveEcology/SpaDES.core@development (>= 3.2.1.9038)",
+                  ## dirnamesFromSet() (bare-number replicate folders), resolveSimYears(), padYears()
+                  "PredictiveEcology/SpaDES.core@development (>= 3.2.1.9057)",
                   "stringr", "terra", "tidyterra"),
   parameters = bindrows(
     defineParameter("dataYear", "numeric", 2020, NA, NA,
