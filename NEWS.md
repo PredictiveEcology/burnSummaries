@@ -1,5 +1,18 @@
 # burnSummaries (development version)
 
+## NFDB polygons fill only the years before NBAC begins (`1.1.0.9002`)
+
+* The historic burn map (multi mode) took NFDB polygons for any year with no NBAC fire inside the
+  study area, so a year from 1972 on with no NBAC fire there got NFDB perimeters, mixing the two
+  products. NFDB polygons now fill only the years before NBAC begins, set by the new parameter
+  `nbacStartYear` (default 1972), and NBAC supplies every year from then on.
+* NFDB polygons with no year (`YEAR = -9999`; 107 in the 2021-07-07 release) are dropped. They
+  passed the old year test, so they were counted in the historic burn map, though not in the number
+  of fire years that divides it.
+* **This changes `meanAnnualCumulBurnMapHistoric.tif`** wherever either case occurred: both the fire
+  counts and the number of fire years change. The log line "backfilling N NFDB-only year(s)" now
+  lists only years before `nbacStartYear`, and a second line counts the NFDB polygons not used.
+
 ## Multi mode runs when every replicate is fire-free (`1.1.0.9001`)
 
 * When no replicate had a fire, multi mode built a fire-size table with no columns, wrote an empty
