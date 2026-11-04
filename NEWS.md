@@ -1,11 +1,29 @@
 # burnSummaries (development version)
 
+* Multi mode finds replicate folders named by the bare number (`.../370/16/`, as `SpaDES.project::pathBuild()` writes them), not only `rep16`: SpaDES.core >= 3.2.1.9057 (PredictiveEcology/SpaDES.core#515).
+
+* `dataYear` is numeric (`2020`, was the integer `2020L`), as in the vegetation modules, and `.inputObjects` stops when another module has a different `dataYear` (`paramCheckOtherMods()` compares with `identical()`, so `2020L` would not match `2020`).
+
+## Fire regime tables in multi mode
+
+* Multi mode writes `burnSummaries_fireRegime.csv`: per replicate, the number of fires, the area burned
+  per year and the largest fire (ha), plus one row for the observed record over the same flammable land.
+  It also writes `burnSummaries_fireBlocks.csv` (fires and area burned per `summaryInterval` years, per
+  replicate) and draws them in `fire_per_block.png`, with the observed burn rate for comparison.
+* New parameter `historicYears` (multi mode) limits the observed record to those years, for the
+  historic burn map and the observed fire regime. The default, `NA`, keeps every year, as before.
+* Single mode, and so what each replicate writes, is unchanged.
+
+
 ## Multi mode runs when every replicate is fire-free (`1.1.0.9001`)
 
 * When no replicate had a fire, multi mode built a fire-size table with no columns, wrote an empty
   `burnSummaries_fireSizes_allReps.csv`, and stopped in `plotFun()` with "Object 'simArea' not
   found". The empty table now has the columns and types a replicate with LandMine fires reads back,
   so the CSV gets a header, and the simulated fire-size histogram, with nothing to show, is skipped.
+
+- `summaryPeriod` is now absolute simulation times everywhere. The summary times and the first `save_single` event used to add `start(sim)` to it again, so `summaryPeriod = c(2020, 3020)` in a run starting at 2020 summarised 4040 to 5040. Runs starting at 0 are unchanged.
+- `summaryPeriod` now defaults to `NA`, meaning the last 30% of the run: still years 700 to 1000 of a 1000-year run, but a shorter run summarises its own last 30% (with a message) instead of finding no summary years. A supplied `summaryPeriod` outside the run's times stops with an error naming both ranges.
 
 ## Year-0 time since fire is the starting map (`1.1.0.9000`)
 
@@ -20,12 +38,28 @@
 * **This changes the year-0 time-since-fire file of every replicate**, and so any current-condition
   summary read from it (e.g. NRV_summary's time-since-fire age classes). The later snapshots,
   `burnMap` and `flammableMap` are unchanged.
+* In single mode `save_single` is also scheduled once when the summary period starts at the end of the simulation, instead of twice at the same time, which wasted work and broke cache reuse on reruns.
 
 # burnSummaries 1.1.0
 
 burnSummaries can now compare simulated fires with observed ones. It downloads the national fire perimeter records (NBAC, with NFDB filling earlier years) for just the study area, and builds fire-size summaries with the fireregimetools package. It works with a single simulation or with many saved replicates, and it accepts the fire outputs of scfm and fireSense as well as LandMine.
 
 Downloads of the national fire records are more reliable, and an interrupted download no longer leaves a broken file behind. The stand-age map is reused across replicates instead of rebuilt each time. A summary period outside the simulation's start and end now stops with a clear message. The module also lists every package it needs, runs after the renamed fire modules, and has automatic tests.
+
+## Burn maps on one scale
+
+* The historic mean annual cumulative burn map is divided by the length of the fire record (first to last year), not the number of years with fires, so it is comparable with the simulated map. The historic and simulated maps share one fill scale and one legend, in burns per cell per year.
+
+## Multi mode from outputs(sim)
+## Multi mode reads replicate files from `outputsDF`
+
+* `InitMulti()` and `FireSummaries()` can take each replicate's burn map, flammable map and fire-size CSV from `outputsDF` (the combined `outputs(sim)` of the runs being summarised), matching each replicate directory and file name exactly. Without `outputsDF`, they read `outputPath(sim)/rep<NN>` as before.
+* Observed fire perimeters can be supplied as `firePolys`, a list of `SpatVector`s with a `YEAR` column, instead of being downloaded.
+* Needs SpaDES.core >= 3.2.1.9037 (`dirnamesFromSet()`, `resolveSimYears()`, `padYears()`; 3.2.1.9037 returns the replicate folder, not a subfolder, from `dirnamesFromSet(leafOnly = FALSE)`).
+## Snapshots during `summaryPeriod` are saved
+
+* `summaryPeriod` is a simulation time (its default is `start(sim) + c(700, 1000)`), but `init` added `start(sim)` to it again, both when scheduling the first `save_single` snapshot and when listing the snapshot times. Unless the simulation started at time 0, the snapshots fell after the end of the run and no `rstTimeSinceFire` was saved during the summary period. Neither now adds `start(sim)`.
+* Needs SpaDES.core >= 3.2.1.9038 (`dirnamesFromSet()`, `resolveSimYears()`, `padYears()`; 3.2.1.9038 returns the replicate folder, not a subfolder, from `dirnamesFromSet(leafOnly = FALSE)`).
 
 ## Missing packages in `reqdPkgs` (`1.0.2.9013`)
 

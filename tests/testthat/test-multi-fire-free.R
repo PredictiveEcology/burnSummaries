@@ -89,7 +89,7 @@ runSingleRep <- function(out, rep, fires, mods, end = 4) {
 
 ## Multi mode over the replicates under `out`. The national fire records are replaced by one
 ## polygon over the grid, so nothing is downloaded.
-runMulti <- function(out, reps, end = 4) {
+runMulti <- function(out, reps, end = 4, historicYears = c(NA_integer_, NA_integer_)) {
   polys <- terra::as.polygons(terra::ext(testGrid()), crs = "EPSG:3400")
   polys$YEAR <- 2000L
   testthat::local_mocked_bindings(
@@ -101,7 +101,7 @@ runMulti <- function(out, reps, end = 4) {
     times = list(start = 0, end = end),
     params = list(burnSummaries = list(
       mode = "multi", reps = reps, simTimes = c(0, end), summaryPeriod = c(2L, 4L),
-      summaryInterval = 1L, .studyAreaName = "test", .plots = "png"
+      summaryInterval = 1L, .studyAreaName = "test", .plots = "png", historicYears = historicYears
     )),
     modules = "burnSummaries",
     objects = list(reportingPolygons = polys),
@@ -141,4 +141,22 @@ test_that("multi mode with every replicate fire-free keeps the fire-size columns
   figs <- basename(list.files(allFree, "\\.png$", recursive = TRUE))
   expect_true("cumulative_burn_maps.png" %in% figs)
   expect_false("simulated_number_size_fires.png" %in% figs)
+})
+
+test_that("multi mode writes the fire regime and fire per block, observed years limited by historicYears", {
+  mods <- writeLandMineStandIn(withr::local_tempdir())
+  out <- file.path(testPaths$outputPath, "multi-regime")
+  runSingleRep(file.path(out, "rep01"), rep = 1L, fires = TRUE, mods = mods)
+  runSingleRep(file.path(out, "rep02"), rep = 2L, fires = FALSE, mods = mods)
+  sim <- runMulti(out, reps = 1:2, historicYears = c(1991L, 2000L))
+  fr <- data.table::fread(file.path(out, "burnSummaries_fireRegime.csv"))
+  expect_identical(fr$source, c("simulated", "simulated", "observed"))
+  expect_identical(fr$nFires[1:2], c(4L, 0L)) ## LandMine stand-in: one fire each year 1-4
+  ## the one observed polygon covers the 3 flammable cells once in the 10-year record
+  pixHa <- prod(terra::res(testGrid())) / 1e4
+  expect_equal(fr$areaBurnedHaPerYear[3], 3 * pixHa / 10)
+  expect_identical(c(fr$firstYear[3], fr$lastYear[3]), c(1991L, 2000L))
+  fb <- data.table::fread(file.path(out, "burnSummaries_fireBlocks.csv"))
+  expect_identical(nrow(fb), 2L * 4L) ## 2 reps x 4 one-year blocks
+  expect_true("fire_per_block.png" %in% basename(list.files(out, "\\.png$", recursive = TRUE)))
 })

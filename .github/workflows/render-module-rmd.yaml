@@ -2,10 +2,12 @@ on:
   pull_request:
     branches:
       - development
+      - modsForFireSense
       - main
   push:
     branches:
       - development
+      - modsForFireSense
       - main
     paths:
       - .github/workflows/render-module-rmd.yaml
