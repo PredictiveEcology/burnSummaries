@@ -32,7 +32,7 @@ always_allow_html: true
 
 
 
-[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummariesfa2473135f33c35d4fc20cf4979e1c877f5c8f72)
+[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries516b66140f85faf79df447af8a93e0f0f2929c58)
 
 [![Issues-badge](figures/issuesBadge.png)](https://github.com/PredictiveEcology/burnSummaries/issues)
 
