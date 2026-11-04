@@ -33,6 +33,10 @@ defineModule(sim, list(
                     "data year for the SCANFI stand-age inputs used to seed rstTimeSinceFire (single mode)"),
     defineParameter("fireTimestep", "integer", 1L, NA, NA,
                     "simulation time interval between burn events"),
+    defineParameter("historicYears", "integer", c(NA_integer_, NA_integer_), NA, NA,
+                    paste("(multi mode) first and last year of the observed fire record used for the historic",
+                          "mean annual burn map and the observed row of the fire regime table, e.g.",
+                          "`c(1985L, 2024L)`. `NA` (the default) uses every year the record holds.")),
     defineParameter("mode", "character", "single", NA, NA,
                     paste("use 'single' to run part of a simulation;",
                           "use 'multi' to run as part of postprocessing multiple runs.")),
@@ -411,7 +415,11 @@ InitMulti <- function(sim) {
     }
   }
 
-  meanAnnualCumulBurnMapHistoric <- historicMeanAnnualBurnMap(firePolys, flammableMap)
+  if (!anyNA(P(sim)$historicYears)) {
+    firePolys <- firePolys[firePolys$YEAR >= P(sim)$historicYears[1] & firePolys$YEAR <= P(sim)$historicYears[2], ]
+  }
+  recordYears <- historicRecordYears(firePolys$YEAR, P(sim)$historicYears)
+  meanAnnualCumulBurnMapHistoric <- historicMeanAnnualBurnMap(firePolys, flammableMap, recordYears)
   f_meanAnnualCumulBurnMapHistoric <- file.path(
     outputPath(sim),
     "meanAnnualCumulBurnMapHistoric.tif"
@@ -434,6 +442,8 @@ InitMulti <- function(sim) {
   }
 
   mod$flammableMap <- flammableMap
+  mod$firePolys <- firePolys
+  mod$recordYears <- recordYears
   mod$meanAnnualCumulBurnMap <- meanAnnualCumulBurnMap
   mod$meanAnnualCumulBurnMapHistoric <- meanAnnualCumulBurnMapHistoric
   mod$pixelSize <- pixelSize
@@ -506,17 +516,106 @@ FireSummaries <- function(sim) {
   ## TODO: add this file to list of outputs
   sim <- registerOutputs(f_out, sim)
 
+  ## the fire regime per replicate and observed, and the fire per block of `summaryInterval` years
+  pixelHa <- prod(mod$pixelSize) / 10^4
+  repIDs <- as.integer(sub("^\\D*", "", mod$allReps))
+  mod$fireRegime <- rbind(
+    simulatedFireRegime(sim$fireSizes, repIDs, P(sim)$simTimes, pixelHa),
+    observedFireRegime(mod$firePolys, mod$meanAnnualCumulBurnMapHistoric, mod$flammableMap, mod$recordYears)
+  )
+  mod$fireBlocks <- fireBlockTable(sim$fireSizes, repIDs, P(sim)$simTimes, P(sim)$summaryInterval, pixelHa)
+  for (x in c("fireRegime", "fireBlocks")) {
+    f <- file.path(outputPath(sim), paste0("burnSummaries_", x, ".csv"))
+    data.table::fwrite(mod[[x]], f)
+    sim <- registerOutputs(f, sim)
+  }
+
   return(invisible(sim))
 }
 
 ## Mean annual burn per cell of the historic record: the number of fire polygons covering a
-## cell, divided by the length of the record (first to last year, inclusive). Dividing by
+## cell, divided by the length of the record (`recordYears`, first to last year, inclusive). Dividing by
 ## the number of years *with* fires would overstate it relative to the simulated map, which
 ## is divided by the full simulation length.
-historicMeanAnnualBurnMap <- function(firePolys, flammableMap) {
-  years <- dplyr::pull(tidyterra::filter(firePolys, YEAR > 0), "YEAR")
-  recordLength <- diff(range(years)) + 1L
-  terra::rasterize(firePolys, flammableMap, field = "YEAR", fun = "count") / recordLength
+historicMeanAnnualBurnMap <- function(firePolys, flammableMap,
+                                      recordYears = historicRecordYears(firePolys$YEAR)) {
+  terra::rasterize(firePolys, flammableMap, field = "YEAR", fun = "count") / length(recordYears)
+}
+
+## The years of the observed record: `historicYears` when it is set, else the first to the last year
+## with a fire (years of 0 or less are unknown years, not part of the record).
+historicRecordYears <- function(years, historicYears = c(NA, NA)) {
+  if (!anyNA(historicYears)) return(seq(historicYears[1], historicYears[2]))
+  years <- years[years > 0]
+  seq(min(years), max(years))
+}
+
+## The simulated fire regime, one row per replicate in `reps` (a replicate with no fire has 0 fires):
+## the number of fires, the area burned per year (all fires' cells over the years from `simTimes[1]` to
+## `simTimes[2]`, the same years as the simulated mean annual burn map) and the largest fire, in ha.
+## `fireSizes` has columns rep and simSize (cells).
+simulatedFireRegime <- function(fireSizes, reps, simTimes, pixelHa) {
+  nYears <- simTimes[2] - simTimes[1]
+  do.call(rbind, lapply(reps, function(r) {
+    s <- as.numeric(fireSizes$simSize[fireSizes$rep == r])
+    s <- s[s > 0]
+    data.frame(source = "simulated", rep = r, firstYear = simTimes[1], lastYear = simTimes[2],
+               nFires = length(s), areaBurnedHaPerYear = sum(s) * pixelHa / nYears,
+               largestFireHa = if (length(s)) max(s) * pixelHa else 0)
+  }))
+}
+
+## The observed fire regime over the same land as the simulated one: area burned per year from the historic
+## mean annual burn map (`historic`, NA off flammable land), and the largest fire as the flammable land inside
+## its polygon (the simulation burns only flammable cells). `flammableMap` is 1 on flammable cells, NA elsewhere.
+observedFireRegime <- function(firePolys, historic, flammableMap, recordYears) {
+  pixelHa <- prod(terra::res(flammableMap)) / 10^4
+  largest <- if (nrow(firePolys)) {
+    max(terra::extract(flammableMap, firePolys, fun = sum, na.rm = TRUE, ID = FALSE)[[1]], na.rm = TRUE) * pixelHa
+  } else 0
+  data.frame(source = "observed", rep = NA_integer_, firstYear = min(recordYears), lastYear = max(recordYears),
+             nFires = nrow(firePolys),
+             areaBurnedHaPerYear = sum(terra::values(historic, mat = FALSE), na.rm = TRUE) * pixelHa,
+             largestFireHa = if (is.finite(largest)) largest else 0)
+}
+
+## Fire per block of `blockYears` years per replicate: number of fires and area burned (ha). A block with
+## no fire is 0, not missing. `block` = the block's first year; blocks start at `simTimes[1]`, and a last
+## block shorter than `blockYears` is left out.
+fireBlockTable <- function(fireSizes, reps, simTimes, blockYears, pixelHa) {
+  starts <- seq(simTimes[1], simTimes[2] - blockYears, by = blockYears)
+  yr <- as.numeric(fireSizes$year)
+  sz <- as.numeric(fireSizes$simSize)
+  out <- expand.grid(rep = reps, block = starts)
+  inBlock <- lapply(seq_len(nrow(out)), function(i)
+    fireSizes$rep == out$rep[i] & yr >= out$block[i] & yr < out$block[i] + blockYears & sz > 0)
+  out$nFires <- vapply(inBlock, sum, numeric(1))
+  out$areaBurnedHa <- vapply(inBlock, function(k) sum(sz[k]) * pixelHa, numeric(1))
+  out
+}
+
+## Area burned and number of fires per block, one line per replicate, with the observed burn rate scaled
+## to a block (dashed) on the area panel. `data` = list(blocks = fireBlockTable(), observed = one row of
+## observedFireRegime(), blockYears =, title =).
+fireBlockPlot <- function(data) {
+  b <- data$blocks
+  long <- rbind(
+    data.frame(rep = b$rep, block = b$block, value = b$areaBurnedHa / 1000,
+               panel = sprintf("Area burned per %d years (thousand ha)", data$blockYears)),
+    data.frame(rep = b$rep, block = b$block, value = b$nFires,
+               panel = sprintf("Number of fires per %d years", data$blockYears))
+  )
+  obs <- data.frame(panel = sprintf("Area burned per %d years (thousand ha)", data$blockYears),
+                    y = data$observed$areaBurnedHaPerYear * data$blockYears / 1000)
+  ggplot2::ggplot(long, ggplot2::aes(block + data$blockYears / 2, value, colour = factor(rep))) +
+    ggplot2::geom_line() + ggplot2::geom_point() +
+    ggplot2::geom_hline(data = obs, ggplot2::aes(yintercept = y), linetype = "dashed", colour = "black") +
+    ggplot2::facet_wrap(~panel, ncol = 1, scales = "free_y") +
+    ggplot2::labs(x = "Simulation year (middle of the block)", y = NULL, colour = "Replicate",
+                  title = data$title,
+                  caption = sprintf("dashed: observed %d-%d burn rate, scaled to %d years (same land, flammable cells)",
+                                    data$observed$firstYear, data$observed$lastYear, data$blockYears)) +
+    ggplot2::theme_bw() + ggplot2::theme(legend.position = "bottom")
 }
 
 ## Side-by-side historic and simulated mean annual burn maps on one fill scale.
@@ -565,6 +664,14 @@ plotFun <- function(sim) {
     ggplot2::ggsave(fggCumulBurnMap, ggCumulBurnMap, height = 10, width = 20, type = "cairo")
     sim <- registerOutputs(fggCumulBurnMap, sim)
   }
+
+  ## fire per block of summaryInterval years, by replicate, against the observed rate
+  Plots(
+    data = list(blocks = mod$fireBlocks, observed = mod$fireRegime[mod$fireRegime$source == "observed", ],
+                blockYears = P(sim)$summaryInterval, title = paste("Fire per", P(sim)$summaryInterval, "years in", studyAreaName)),
+    fn = fireBlockPlot, filename = "fire_per_block", path = figurePath(sim),
+    types = P(sim)$.plots, ggsaveArgs = list(width = 8, height = 6, units = "in")
+  )
 
   ## fire size histograms w/ median fire sizes
   pixelSizeHa <- prod(mod$pixelSize) / 10^4
