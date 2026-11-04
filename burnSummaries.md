@@ -1,6 +1,6 @@
 ---
 title: "burnSummaries Manual"
-subtitle: "v.1.1.0.9002"
+subtitle: "v.1.1.0.9003"
 date: "Last updated: 2026-11-04"
 output:
   bookdown::html_document2:
@@ -32,7 +32,7 @@ always_allow_html: true
 
 
 
-[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries6717c4fc7117e2f23ec6db65f8db3f1fa218fd89)
+[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummariesfa2473135f33c35d4fc20cf4979e1c877f5c8f72)
 
 [![Issues-badge](figures/issuesBadge.png)](https://github.com/PredictiveEcology/burnSummaries/issues)
 
@@ -84,6 +84,12 @@ Table \@ref(tab:moduleInputs-burnSummaries) shows the full list of module inputs
    <td style="text-align:left;"> NA </td>
   </tr>
   <tr>
+   <td style="text-align:left;"> fireReturnInterval </td>
+   <td style="text-align:left;"> SpatRaster </td>
+   <td style="text-align:left;"> Fire return interval (years), on the grid of the saved `flammableMap`; LandMine's input of that name. Multi mode, optional: both burn maps are restricted to cells with an interval (not NA, above 0), the cells where LandMine ignites fires. </td>
+   <td style="text-align:left;"> NA </td>
+  </tr>
+  <tr>
    <td style="text-align:left;"> fireSizes </td>
    <td style="text-align:left;"> list </td>
    <td style="text-align:left;"> Fire sizes summary tables from LandMine. One of `burnSummary` or `fireSizes` is required in single mode. </td>
@@ -111,6 +117,12 @@ Table \@ref(tab:moduleInputs-burnSummaries) shows the full list of module inputs
    <td style="text-align:left;"> rstTimeSinceFire </td>
    <td style="text-align:left;"> SpatRaster </td>
    <td style="text-align:left;"> map of time since last burn, with non-flammable pixels receiving `NA`. One of `rstTimeSinceFire` or `nonForest_timeSinceDisturbance` is required in single mode. </td>
+   <td style="text-align:left;"> NA </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> studyArea </td>
+   <td style="text-align:left;"> SpatVector </td>
+   <td style="text-align:left;"> Polygon of the area the fire model burns; LandMine's input of that name. Multi mode, optional: both burn maps are restricted to cells whose centre is inside it. An `sf` object is also accepted. </td>
    <td style="text-align:left;"> NA </td>
   </tr>
 </tbody>
