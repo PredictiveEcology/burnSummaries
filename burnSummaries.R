@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.1.0.9001"),
+  version = list(burnSummaries = "1.1.0.9003"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -25,11 +25,11 @@ defineModule(sim, list(
                   "FOR-CAST/fireregimetools@main (>= 0.1.0.9008)",
                   "ggplot2", "ggspatial", "patchwork",
                   "reproducible",
-                  ## dirnamesFromSet(), resolveSimYears(), padYears()
-                  "PredictiveEcology/SpaDES.core@development (>= 3.2.1.9038)",
+                  ## dirnamesFromSet() (bare-number replicate folders), resolveSimYears(), padYears()
+                  "PredictiveEcology/SpaDES.core@development (>= 3.2.1.9057)",
                   "stringr", "terra", "tidyterra"),
   parameters = bindrows(
-    defineParameter("dataYear", "integer", 2020L, NA, NA,
+    defineParameter("dataYear", "numeric", 2020, NA, NA,
                     "data year for the SCANFI stand-age inputs used to seed rstTimeSinceFire (single mode)"),
     defineParameter("fireTimestep", "integer", 1L, NA, NA,
                     "simulation time interval between burn events"),
@@ -780,6 +780,8 @@ plotFun <- function(sim) {
 }
 
 .inputObjects <- function(sim) {
+  ## the same data year as the vegetation modules (Biomass_core, Biomass_borealDataPrep, ...)
+  paramCheckOtherMods(sim, "dataYear", ifSetButDifferent = "error")
   ## NOTE: fireSize table can be derived from 'burnSummary' or 'fireSize' objects,
   ## so don't implement a hard requirement for either here.
   if (P(sim)$mode == "single") {

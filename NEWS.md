@@ -1,5 +1,9 @@
 # burnSummaries (development version)
 
+* Multi mode finds replicate folders named by the bare number (`.../370/16/`, as `SpaDES.project::pathBuild()` writes them), not only `rep16`: SpaDES.core >= 3.2.1.9057 (PredictiveEcology/SpaDES.core#515).
+
+* `dataYear` is numeric (`2020`, was the integer `2020L`), as in the vegetation modules, and `.inputObjects` stops when another module has a different `dataYear` (`paramCheckOtherMods()` compares with `identical()`, so `2020L` would not match `2020`).
+
 ## Fire regime tables in multi mode
 
 * Multi mode writes `burnSummaries_fireRegime.csv`: per replicate, the number of fires, the area burned
@@ -9,6 +13,7 @@
 * New parameter `historicYears` (multi mode) limits the observed record to those years, for the
   historic burn map and the observed fire regime. The default, `NA`, keeps every year, as before.
 * Single mode, and so what each replicate writes, is unchanged.
+
 
 ## Multi mode runs when every replicate is fire-free (`1.1.0.9001`)
 
