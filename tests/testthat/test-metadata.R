@@ -22,11 +22,13 @@ test_that("inputs are the expected names and classes", {
     c(
       "burnMap"                        = "SpatRaster",
       "burnSummary"                    = "data.table",
+      "fireReturnInterval"             = "SpatRaster",
       "fireSizes"                      = "list",
       "flammableMap"                   = "SpatRaster",
       "nonForest_timeSinceDisturbance" = "SpatRaster",
       "rstCurrentBurn"                 = "SpatRaster",
-      "rstTimeSinceFire"               = "SpatRaster"
+      "rstTimeSinceFire"               = "SpatRaster",
+      "studyArea"                      = "SpatVector"
 )
   )
 })

@@ -1,5 +1,28 @@
 # burnSummaries (development version)
 
+## Historic and simulated burn maps cover the same cells; the historic map is a rate per year (`1.1.0.9003`)
+
+* Multi mode restricts both mean annual burn maps, historic and simulated, to the same cells:
+  flammable, with the centre inside `studyArea`, and with a fire return interval
+  (`fireReturnInterval` not NA and above 0). For LandMine these are the cells where it ignites
+  fires, and the cells its FRI diagnostics use. The historic map covered every cell of the grid,
+  which is the study area's bounding box, so it took in fires LandMine could not simulate: in
+  LandWeb, 14-33% of the grid's flammable cells lie outside the study area.
+* `studyArea` and `fireReturnInterval` are new, optional inputs. A fire model without them (scfm,
+  fireSense) can leave either out: that restriction is then skipped, with a message, and both maps
+  cover every flammable cell, as before.
+* The historic map divides each cell's recorded fires by the span of the record: the years from the
+  first to the last year with a fire in those cells, inclusive. It divided by the number of distinct
+  years with a fire anywhere in the grid, which left fire-free years out and overstated the rate per
+  year. The log states the span, e.g. "historic record 1963-2025 (63 years)". The record is
+  unchanged: NBAC from `nbacStartYear`, NFDB before it.
+* **This changes `meanAnnualCumulBurnMapHistoric.tif`** in every cell: it is NA outside the
+  burnable cells (it held values in non-flammable cells and outside the study area), 0 in a burnable
+  cell with no recorded fire (was NA), and has the new divisor. The simulated map is now written too,
+  as `meanAnnualCumulBurnMap.tif`, on the same cells, and `cumulative_burn_maps.png` shows both on
+  these cells only. The log also gives both maps' mean rate over these cells. The fire-size CSVs and
+  figures are unchanged.
+
 ## NFDB polygons fill only the years before NBAC begins (`1.1.0.9002`)
 
 * The historic burn map (multi mode) took NFDB polygons for any year with no NBAC fire inside the

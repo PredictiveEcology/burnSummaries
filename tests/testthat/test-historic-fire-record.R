@@ -14,20 +14,6 @@ yearPolys <- function(years) {
   v
 }
 
-## One polygon inside each of the cells `cells` of raster `r`, with fire years `years`.
-cellPolys <- function(r, cells, years) {
-  xy <- terra::xyFromCell(r, cells)
-  h <- 0.4 * terra::res(r)
-  wkt <- sprintf(
-    "POLYGON ((%1$f %3$f, %2$f %3$f, %2$f %4$f, %1$f %4$f, %1$f %3$f))",
-    xy[, 1] - h[1], xy[, 1] + h[1], xy[, 2] - h[2], xy[, 2] + h[2]
-  )
-  v <- terra::vect(wkt, crs = terra::crs(r))
-  v$YEAR <- as.integer(years)
-  v$SIZE_HA <- rep(1, length(years))
-  v
-}
-
 test_that("NFDB fills only the years before NBAC begins, not later years NBAC lacks here", {
   nbac <- yearPolys(c(1980, 1995))
   nfdb <- yearPolys(c(1950, 1971, 1972, 1985, 1980))
@@ -110,7 +96,7 @@ test_that("the historic burn map takes NFDB only before 1972 and drops undated p
     terra::rast(file.path(out, "meanAnnualCumulBurnMapHistoric.tif")),
     mat = FALSE
   )
-  ## one fire each in cells 1 (NBAC 1980) and 2 (NFDB 1971), over a record of two fire years
+  ## one fire each in cells 1 (NBAC 1980) and 2 (NFDB 1971), over a record of 1971-1980, 10 years
   expect_identical(which(hist > 0), 1:2)
-  expect_equal(hist[1:2], c(0.5, 0.5))
+  expect_equal(hist[1:2], c(0.1, 0.1), tolerance = 1e-6)
 })
