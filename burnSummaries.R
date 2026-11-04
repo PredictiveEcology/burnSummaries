@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.1.0.9001"),
+  version = list(burnSummaries = "1.1.0.9002"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -32,6 +32,9 @@ defineModule(sim, list(
     defineParameter("mode", "character", "single", NA, NA,
                     paste("use 'single' to run part of a simulation;",
                           "use 'multi' to run as part of postprocessing multiple runs.")),
+    defineParameter("nbacStartYear", "integer", 1972L, NA, NA,
+                    paste("first year of the historic fire record (multi mode) taken from NBAC",
+                          "perimeters; earlier years come from NFDB polygons. NBAC begins in 1972.")),
     defineParameter("reps", "integer", 1L:10L, 1L, NA_integer_,
                     paste("in single mode, should be length 1 indicating the replicate id;",
                           "in multi mode, a vector of replicate IDs.")),
@@ -313,9 +316,9 @@ InitMulti <- function(sim) {
   meanAnnualCumulBurnMap <- burnMaps / length(allReps)
 
   ## Observed fire perimeters: NBAC (National Burned Area Composite -- satellite-derived,
-  ## 1972-present, the preferred source) supplemented with NFDB polygons ONLY for years
-  ## NBAC does not cover. Older NFDB perimeters are aerial sketches that overestimate
-  ## burned area, so NBAC is authoritative wherever it exists. Both are national CWFIS
+  ## 1972-present, the preferred source) supplemented with NFDB polygons ONLY for the years
+  ## before NBAC begins (historicFirePolys()). Older NFDB perimeters are aerial sketches that
+  ## overestimate burned area, so NBAC is authoritative wherever it exists. Both are national CWFIS
   ## downloads, harmonised (tolerant YEAR/SIZE_HA columns) + clipped to the sim grid via
   ## fireregimetools::fetch_nbac_polys() / fetch_nfdb_polys().
   message("preparing historical cumulative burn map using NBAC perimeters (+ NFDB backfill)...")
@@ -333,22 +336,10 @@ InitMulti <- function(sim) {
     nbac <- fireregimetools::fetch_nbac_polys(flammableMap, dest = dst)
     nfdb <- fireregimetools::fetch_nfdb_polys(flammableMap, dest = dst)
 
-    ## NBAC is authoritative; add NFDB polygons only for the years NBAC does not cover.
-    nbacYears <- sort(unique(nbac$YEAR))
-    backfill <- tidyterra::filter(nfdb, !(YEAR %in% !!nbacYears))
-    if (nrow(backfill) > 0) {
-      message(sprintf(
-        "  NBAC covers %d-%d; backfilling %d NFDB-only year(s): %s",
-        min(nbacYears), max(nbacYears), length(unique(backfill$YEAR)),
-        paste(sort(unique(backfill$YEAR)), collapse = ", ")
-      ))
-      tidyterra::bind_spat_rows(nbac[, "YEAR"], backfill[, "YEAR"])
-    } else {
-      nbac[, "YEAR"]
-    }
+    historicFirePolys(nbac, nfdb, nbacStartYear = P(sim)$nbacStartYear)
   }
 
-  fireYears <- tidyterra::filter(firePolys, YEAR > 0) |> dplyr::pull("YEAR") |> unique() |> sort()
+  fireYears <- unique(firePolys$YEAR)
   meanAnnualCumulBurnMapHistoric <- terra::rasterize(
     firePolys,
     flammableMap,
@@ -385,6 +376,37 @@ InitMulti <- function(sim) {
   # ! ----- STOP EDITING ----- ! #
 
   return(invisible(sim))
+}
+
+## The historic fire record, with only a `YEAR` column: NBAC perimeters from `nbacStartYear` on, and
+## NFDB polygons for the years before it. The boundary is a fixed year, not the years NBAC has inside
+## the study area: a year from 1972 on with no NBAC fire here is a year in which NBAC mapped none, and
+## filling it from the NFDB would mix the two products. NFDB polygons with no year (`YEAR` -9999, 0
+## or missing) are dropped.
+historicFirePolys <- function(nbac, nfdb, nbacStartYear) {
+  nbac <- nbac[which(nbac$YEAR >= nbacStartYear), "YEAR"]
+  nDated <- sum(nfdb$YEAR > 0, na.rm = TRUE)
+  backfill <- nfdb[which(nfdb$YEAR > 0 & nfdb$YEAR < nbacStartYear), "YEAR"]
+
+  years <- sort(unique(backfill$YEAR))
+  message(sprintf(
+    "  NBAC from %d: %d polygon(s); backfilling %d NFDB-only year(s): %s",
+    nbacStartYear, nrow(nbac), length(years), paste(years, collapse = ", ")
+  ))
+  if (nrow(backfill) < nrow(nfdb)) {
+    message(sprintf(
+      "  NFDB polygons not used: %d with no year, %d from %d on",
+      nrow(nfdb) - nDated, nDated - nrow(backfill), nbacStartYear
+    ))
+  }
+
+  if (nrow(backfill) == 0L) {
+    nbac
+  } else if (nrow(nbac) == 0L) {
+    backfill
+  } else {
+    tidyterra::bind_spat_rows(nbac, backfill)
+  }
 }
 
 FireSummaries <- function(sim) {
