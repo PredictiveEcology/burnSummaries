@@ -552,31 +552,54 @@ historicRecordYears <- function(years, historicYears = c(NA, NA)) {
 
 ## The simulated fire regime, one row per replicate in `reps` (a replicate with no fire has 0 fires):
 ## the number of fires, the area burned per year (all fires' cells over the years from `simTimes[1]` to
-## `simTimes[2]`, the same years as the simulated mean annual burn map) and the largest fire, in ha.
-## `fireSizes` has columns rep and simSize (cells).
+## `simTimes[2]`, the same years as the simulated mean annual burn map) and the largest fire, in ha, then
+## [fireRegimeStats()]. `fireSizes` has columns rep, year and simSize (cells).
 simulatedFireRegime <- function(fireSizes, reps, simTimes, pixelHa) {
   nYears <- simTimes[2] - simTimes[1]
   do.call(rbind, lapply(reps, function(r) {
     s <- as.numeric(fireSizes$simSize[fireSizes$rep == r])
+    y <- as.numeric(fireSizes$year[fireSizes$rep == r])[s > 0]
     s <- s[s > 0]
-    data.frame(source = "simulated", rep = r, firstYear = simTimes[1], lastYear = simTimes[2],
-               nFires = length(s), areaBurnedHaPerYear = sum(s) * pixelHa / nYears,
-               largestFireHa = if (length(s)) max(s) * pixelHa else 0)
+    ## year of each fire as one of the nYears years; a fire in the closing year counts in the last one
+    yi <- pmin(pmax(floor(y) - simTimes[1], 0), nYears - 1) + 1
+    annual <- vapply(split(s * pixelHa, factor(yi, levels = seq_len(nYears))), sum, 0)
+    cbind(data.frame(source = "simulated", rep = r, firstYear = simTimes[1], lastYear = simTimes[2],
+                     nFires = length(s), areaBurnedHaPerYear = sum(s) * pixelHa / nYears,
+                     largestFireHa = if (length(s)) max(s) * pixelHa else 0),
+          fireRegimeStats(s * pixelHa, annual))
   }))
+}
+
+## Fire-size and annual-area statistics of one regime: the mean fire size, the 10, 25, 50, 75, 90 and 99%
+## quantiles of fire size (ha), and the variance of the area burned per year (ha^2, every year of the record,
+## years without fire as 0). NA when there is no fire (variance: fewer than 2 years).
+fireRegimeQuantiles <- c(0.1, 0.25, 0.5, 0.75, 0.9, 0.99)
+fireRegimeStats <- function(sizesHa, annualHa) {
+  q <- if (length(sizesHa)) stats::quantile(sizesHa, fireRegimeQuantiles, names = FALSE) else rep(NA_real_, length(fireRegimeQuantiles))
+  out <- data.frame(meanFireSizeHa = if (length(sizesHa)) mean(sizesHa) else NA_real_,
+                    varAnnualAreaHa2 = if (length(annualHa) > 1) stats::var(annualHa) else NA_real_)
+  out[paste0("fireSizeQ", fireRegimeQuantiles * 100, "Ha")] <- as.list(q)
+  out
 }
 
 ## The observed fire regime over the same land as the simulated one: area burned per year from the historic
 ## mean annual burn map (`historic`, NA off flammable land), and the largest fire as the flammable land inside
-## its polygon (the simulation burns only flammable cells). `flammableMap` is 1 on flammable cells, NA elsewhere.
+## its polygon (the simulation burns only flammable cells), then [fireRegimeStats()] of the fires' flammable
+## areas (a fire with none is left out) and their sum per year of `recordYears`. `flammableMap` is 1 on
+## flammable cells, NA elsewhere.
 observedFireRegime <- function(firePolys, historic, flammableMap, recordYears) {
   pixelHa <- prod(terra::res(flammableMap)) / 10^4
-  largest <- if (nrow(firePolys)) {
-    max(terra::extract(flammableMap, firePolys, fun = sum, na.rm = TRUE, ID = FALSE)[[1]], na.rm = TRUE) * pixelHa
-  } else 0
-  data.frame(source = "observed", rep = NA_integer_, firstYear = min(recordYears), lastYear = max(recordYears),
-             nFires = nrow(firePolys),
-             areaBurnedHaPerYear = sum(terra::values(historic, mat = FALSE), na.rm = TRUE) * pixelHa,
-             largestFireHa = if (is.finite(largest)) largest else 0)
+  ha <- if (nrow(firePolys)) {
+    terra::extract(flammableMap, firePolys, fun = sum, na.rm = TRUE, ID = FALSE)[[1]] * pixelHa
+  } else numeric(0)
+  ha[!is.finite(ha)] <- 0
+  yr <- firePolys$YEAR
+  annual <- vapply(split(ha, factor(yr, levels = recordYears)), sum, 0)
+  cbind(data.frame(source = "observed", rep = NA_integer_, firstYear = min(recordYears), lastYear = max(recordYears),
+                   nFires = nrow(firePolys),
+                   areaBurnedHaPerYear = sum(terra::values(historic, mat = FALSE), na.rm = TRUE) * pixelHa,
+                   largestFireHa = if (length(ha)) max(ha) else 0),
+        fireRegimeStats(ha[ha > 0], annual))
 }
 
 ## Fire per block of `blockYears` years per replicate: number of fires and area burned (ha). A block with

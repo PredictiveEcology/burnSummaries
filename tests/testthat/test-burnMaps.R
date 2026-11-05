@@ -48,6 +48,22 @@ test_that("the fire regime counts each replicate, including one with no fire", {
   expect_equal(r$largestFireHa, c(50, 20, 0))
 })
 
+test_that("the fire regime gives mean fire size, size quantiles and the variance of annual area, zero years included", {
+  fs <- data.frame(rep = c(1, 1, 1, 2), year = c(5, 15, 15, 30), simSize = c(2, 10, 0, 4))
+  r <- simulatedFireRegime(fs, reps = 1:3, simTimes = c(0, 40), pixelHa = 5)
+  expect_equal(r$meanFireSizeHa, c(30, 20, NA))
+  expect_equal(r$fireSizeQ50Ha, c(30, 20, NA))
+  expect_equal(r$fireSizeQ99Ha[1], unname(stats::quantile(c(10, 50), 0.99)))
+  annual1 <- c(rep(0, 5), 10, rep(0, 9), 50, rep(0, 24))                  ## 40 years: 10 ha in year 5, 50 ha in year 15
+  expect_equal(r$varAnnualAreaHa2, c(stats::var(annual1), stats::var(c(rep(0, 30), 20, rep(0, 9))), 0))
+  expect_equal(mean(annual1), r$areaBurnedHaPerYear[1])                  ## the same years as the area per year
+  expect_named(r, c("source", "rep", "firstYear", "lastYear", "nFires", "areaBurnedHaPerYear", "largestFireHa",
+                    "meanFireSizeHa", "varAnnualAreaHa2", paste0("fireSizeQ", c(10, 25, 50, 75, 90, 99), "Ha")))
+  ## a fire in the closing year counts in the last year of the record, not outside it
+  r2 <- simulatedFireRegime(data.frame(rep = 1, year = 40, simSize = 1), reps = 1, simTimes = c(0, 40), pixelHa = 1)
+  expect_equal(r2$varAnnualAreaHa2, stats::var(c(rep(0, 39), 1)))
+})
+
 test_that("the observed regime counts flammable land only", {
   flammable <- toyRaster(c(1, 1, NA, 1)) ## cell 3 cannot burn
   polys <- terra::vect(c("POLYGON ((0 0, 2 0, 2 1, 0 1, 0 0))", "POLYGON ((0 1, 1 1, 1 2, 0 2, 0 1))"),
@@ -60,6 +76,9 @@ test_that("the observed regime counts flammable land only", {
   expect_equal(o$areaBurnedHaPerYear, 2 * pixHa / 10) ## cells 1 and 4, once each, over 10 years
   expect_equal(o$largestFireHa, pixHa)                ## each fire covers one flammable cell
   expect_identical(c(o$firstYear, o$lastYear), c(2001L, 2010L))
+  expect_equal(o$meanFireSizeHa, pixHa)
+  expect_equal(o$fireSizeQ90Ha, pixHa)
+  expect_equal(o$varAnnualAreaHa2, stats::var(c(pixHa, pixHa, rep(0, 8)))) ## one cell in 2001, one in 2002, 8 years of none
 })
 
 test_that("fire per block keeps blocks with no fire as zero", {

@@ -1,5 +1,7 @@
 # burnSummaries (development version)
 
+* `burnSummaries_fireRegime.csv` adds, per replicate and for the observed record, the mean fire size, the 10, 25, 50, 75, 90 and 99% quantiles of fire size (ha) and the variance of the area burned per year (ha^2, years without fire as 0). Observed fire sizes are the flammable land inside each polygon, as for the largest fire.
+
 * Multi mode finds replicate folders named by the bare number (`.../370/16/`, as `SpaDES.project::pathBuild()` writes them), not only `rep16`: SpaDES.core >= 3.2.1.9057 (PredictiveEcology/SpaDES.core#515).
 
 * `dataYear` is numeric (`2020`, was the integer `2020L`), as in the vegetation modules, and `.inputObjects` stops when another module has a different `dataYear` (`paramCheckOtherMods()` compares with `identical()`, so `2020L` would not match `2020`).
