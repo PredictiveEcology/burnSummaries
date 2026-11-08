@@ -81,3 +81,27 @@ test_that("fire per block keeps blocks with no fire as zero", {
   expect_equal(b$areaBurnedHa[b$rep == 1], c(2, 0, 6))
   expect_equal(b$areaBurnedHa[b$rep == 2], c(4, 0, 0))
 })
+
+test_that("the simulated regime covers only the years of `period`, default the whole run", {
+  fs <- data.frame(rep = c(1, 1, 1, 1), year = c(5, 15, 25, 40), simSize = c(1, 2, 4, 8))
+  whole <- simulatedFireRegime(fs, reps = 1, simTimes = c(0, 40), pixelHa = 1)
+  expect_equal(whole$nFires, 4L)
+  expect_equal(whole$areaBurnedHaPerYear, 15 / 40)
+  ## years 10 < year <= 30: the fires of years 15 and 25
+  win <- simulatedFireRegime(fs, reps = 1, simTimes = c(0, 40), pixelHa = 1, period = c(10, 30))
+  expect_equal(win$nFires, 2L)
+  expect_equal(win$areaBurnedHaPerYear, 6 / 20)
+  expect_equal(win$largestFireHa, 4)
+  expect_identical(c(win$firstYear, win$lastYear), c(10, 30))
+})
+
+test_that("the observed regime does not count fires outside the burnable cells", {
+  flammable <- toyRaster(c(1, 1, NA, NA)) ## the bottom row cannot burn
+  polys <- terra::vect(c("POLYGON ((0 0, 2 0, 2 1, 0 1, 0 0))", "POLYGON ((0 1, 1 1, 1 2, 0 2, 0 1))"),
+                       crs = "EPSG:3857") ## the bottom row only, and cell 1
+  polys$YEAR <- c(2001L, 2002L)
+  yrs <- 2001:2010
+  historic <- historicBurnMap(polys, flammable, !is.na(terra::values(flammable, mat = FALSE)), yrs)
+  o <- observedFireRegime(polys, historic, flammable, yrs)
+  expect_identical(o$nFires, 1L)
+})

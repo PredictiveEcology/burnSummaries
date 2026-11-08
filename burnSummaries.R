@@ -43,6 +43,11 @@ defineModule(sim, list(
     defineParameter("nbacStartYear", "integer", 1972L, NA, NA,
                     paste("first year of the historic fire record (multi mode) taken from NBAC",
                           "perimeters; earlier years come from NFDB polygons. NBAC begins in 1972.")),
+    defineParameter("regimePeriod", "integer", c(NA_integer_, NA_integer_), NA, NA,
+                    paste("(multi mode) first and last simulation year the simulated rows of",
+                          "`burnSummaries_fireRegime.csv` cover: fires in the years after the first up to and",
+                          "including the last, e.g. `c(700L, 1000L)` to leave out a run's transient.",
+                          "`NA` (the default) covers the whole run, `simTimes`.")),
     defineParameter("reps", "integer", 1L:10L, 1L, NA_integer_,
                     paste("in single mode, should be length 1 indicating the replicate id;",
                           "in multi mode, a vector of replicate IDs.")),
@@ -663,7 +668,8 @@ FireSummaries <- function(sim) {
   pixelHa <- prod(mod$pixelSize) / 10^4
   repIDs <- as.integer(sub("^\\D*", "", mod$allReps))
   mod$fireRegime <- rbind(
-    simulatedFireRegime(sim$fireSizes, repIDs, P(sim)$simTimes, pixelHa),
+    simulatedFireRegime(sim$fireSizes, repIDs, P(sim)$simTimes, pixelHa,
+                        resolveRegimePeriod(P(sim)$regimePeriod, P(sim)$simTimes)),
     observedFireRegime(mod$firePolys, mod$meanAnnualCumulBurnMapHistoric, mod$burnableMap, mod$recordYears)
   )
   mod$fireBlocks <- fireBlockTable(sim$fireSizes, repIDs, P(sim)$simTimes, P(sim)$summaryInterval, pixelHa)
@@ -676,34 +682,49 @@ FireSummaries <- function(sim) {
   return(invisible(sim))
 }
 
+## The years the simulated fire regime covers: `regimePeriod` when set, else the whole run, `simTimes`.
+resolveRegimePeriod <- function(regimePeriod, simTimes) {
+  if (anyNA(regimePeriod)) return(simTimes)
+  if (regimePeriod[1] >= regimePeriod[2] || regimePeriod[1] < simTimes[1] || regimePeriod[2] > simTimes[2]) {
+    stop("regimePeriod ", regimePeriod[1], " to ", regimePeriod[2], " is not within the simulation times ",
+         simTimes[1], " to ", simTimes[2], ". Set regimePeriod within the run's times.")
+  }
+  regimePeriod
+}
+
 ## The simulated fire regime, one row per replicate in `reps` (a replicate with no fire has 0 fires):
-## the number of fires, the area burned per year (all fires' cells over the years from `simTimes[1]` to
-## `simTimes[2]`, the same years as the simulated mean annual burn map) and the largest fire, in ha.
-## `fireSizes` has columns rep and simSize (cells).
-simulatedFireRegime <- function(fireSizes, reps, simTimes, pixelHa) {
-  nYears <- simTimes[2] - simTimes[1]
+## the number of fires, the area burned per year (the cells of the fires in the years after `period[1]`
+## up to `period[2]`, over those years) and the largest fire, in ha. `period` is the whole run,
+## `simTimes`, unless given (resolveRegimePeriod()); the simulated mean annual burn map is always the
+## whole run. `fireSizes` has columns rep, year and simSize (cells). A fire's size is all the cells it
+## burned: the table has no cell locations, so it cannot be cut to the burnable cells as the maps and the
+## observed row are.
+simulatedFireRegime <- function(fireSizes, reps, simTimes, pixelHa, period = simTimes) {
+  nYears <- period[2] - period[1]
+  inPeriod <- as.numeric(fireSizes$year) > period[1] & as.numeric(fireSizes$year) <= period[2]
   do.call(rbind, lapply(reps, function(r) {
-    s <- as.numeric(fireSizes$simSize[fireSizes$rep == r])
+    s <- as.numeric(fireSizes$simSize[fireSizes$rep == r & inPeriod])
     s <- s[s > 0]
-    data.frame(source = "simulated", rep = r, firstYear = simTimes[1], lastYear = simTimes[2],
+    data.frame(source = "simulated", rep = r, firstYear = period[1], lastYear = period[2],
                nFires = length(s), areaBurnedHaPerYear = sum(s) * pixelHa / nYears,
                largestFireHa = if (length(s)) max(s) * pixelHa else 0)
   }))
 }
 
 ## The observed fire regime over the same land as the simulated one: area burned per year from the historic
-## mean annual burn map (`historic`, NA off the burnable cells), and the largest fire as the burnable land
-## inside its polygon (the simulation burns only those cells). `burnableMap` is 1 on the burnable cells
-## (burnableCells()), NA elsewhere. `recordYears` is historicRecordYears(); with no record, the first and
-## last years are NA.
+## mean annual burn map (`historic`, NA off the burnable cells), and the number of fires and the largest fire
+## from the burnable land inside each polygon (a fire with no burnable cell is not counted). `burnableMap` is
+## 1 on the burnable cells (burnableCells()), NA elsewhere. `recordYears` is historicRecordYears(); with no
+## record, the first and last years are NA.
 observedFireRegime <- function(firePolys, historic, burnableMap, recordYears) {
   pixelHa <- prod(terra::res(burnableMap)) / 10^4
-  largest <- if (nrow(firePolys)) {
-    max(terra::extract(burnableMap, firePolys, fun = sum, na.rm = TRUE, ID = FALSE)[[1]], na.rm = TRUE) * pixelHa
-  } else 0
+  burnableCellsIn <- if (nrow(firePolys)) {
+    terra::extract(burnableMap, firePolys, fun = sum, na.rm = TRUE, ID = FALSE)[[1]]
+  } else numeric(0)
+  largest <- if (length(burnableCellsIn)) max(burnableCellsIn, na.rm = TRUE) * pixelHa else 0
   span <- if (length(recordYears)) range(recordYears) else c(NA_integer_, NA_integer_)
   data.frame(source = "observed", rep = NA_integer_, firstYear = span[1], lastYear = span[2],
-             nFires = nrow(firePolys),
+             nFires = sum(burnableCellsIn > 0, na.rm = TRUE),
              areaBurnedHaPerYear = sum(terra::values(historic, mat = FALSE), na.rm = TRUE) * pixelHa,
              largestFireHa = if (is.finite(largest)) largest else 0)
 }
@@ -943,8 +964,6 @@ plotFun <- function(sim) {
         sim$rstTimeSinceFire[] <- as.integer(sim$rstTimeSinceFire[])
       }
     }
-  } else if (P(sim)$mode == "multi") {
-    stopifnot(suppliedElsewhere("reportingPolygons", sim))
   }
 
   return(invisible(sim))

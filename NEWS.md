@@ -1,5 +1,16 @@
 # burnSummaries (development version)
 
+## Fire regime window, observed fire count, no `reportingPolygons`
+
+* New parameter `regimePeriod` (multi mode, default `c(NA, NA)`): the first and last simulation year the simulated
+  rows of `burnSummaries_fireRegime.csv` cover, e.g. `c(700L, 1000L)` to leave out a run's transient. The default
+  is the whole run, as before. The burn maps and `burnSummaries_fireBlocks.csv` still cover the whole run.
+* The observed row counts fires (`nFires`) on the burnable cells only, as its area and largest fire already did
+  (was: every fire in the grid's extent).
+* The simulated rows still count every cell a fire burned: `fireSizes` has no cell locations, so they cannot be
+  cut to the burnable cells.
+* Multi mode no longer requires `reportingPolygons`, which the module never used.
+
 ## Supplied fire polygons and `historicYears` with the burnable cells
 
 * The observed record is the supplied `firePolys` when given, else the downloaded NBAC record with
