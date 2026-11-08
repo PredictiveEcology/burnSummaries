@@ -1,5 +1,17 @@
 # burnSummaries (development version)
 
+## Supplied fire polygons and `historicYears` with the burnable cells
+
+* The observed record is the supplied `firePolys` when given, else the downloaded NBAC record with
+  NFDB before `nbacStartYear`. Either way, undated fires (`YEAR` 0, -9999 or missing) are dropped and
+  `historicYears` limits it to those years. The historic map counts it on the burnable cells only.
+* The historic map divides by `historicYears`' span when it is set (fire-free years in it count), and
+  otherwise by the first to the last year with a fire in the burnable cells.
+* The observed row of `burnSummaries_fireRegime.csv` has the same land: its area burned per year is
+  the historic map's, and its largest fire is the burnable land inside the polygon (was: the flammable
+  land). Without `studyArea` and `fireReturnInterval` these are the flammable cells, as before. Its
+  first and last years are NA when there is no record.
+
 * Multi mode finds replicate folders named by the bare number (`.../370/16/`, as `SpaDES.project::pathBuild()` writes them), not only `rep16`: SpaDES.core >= 3.2.1.9057 (PredictiveEcology/SpaDES.core#515).
 
 * `dataYear` is numeric (`2020`, was the integer `2020L`), as in the vegetation modules, and `.inputObjects` stops when another module has a different `dataYear` (`paramCheckOtherMods()` compares with `identical()`, so `2020L` would not match `2020`).
@@ -14,6 +26,41 @@
   historic burn map and the observed fire regime. The default, `NA`, keeps every year, as before.
 * Single mode, and so what each replicate writes, is unchanged.
 
+## Historic and simulated burn maps cover the same cells; the historic map is a rate per year (`1.1.0.9003`)
+
+* Multi mode restricts both mean annual burn maps, historic and simulated, to the same cells:
+  flammable, with the centre inside `studyArea`, and with a fire return interval
+  (`fireReturnInterval` not NA and above 0). For LandMine these are the cells where it ignites
+  fires, and the cells its FRI diagnostics use. The historic map covered every cell of the grid,
+  which is the study area's bounding box, so it took in fires LandMine could not simulate: in
+  LandWeb, 14-33% of the grid's flammable cells lie outside the study area.
+* `studyArea` and `fireReturnInterval` are new, optional inputs. A fire model without them (scfm,
+  fireSense) can leave either out: that restriction is then skipped, with a message, and both maps
+  cover every flammable cell, as before.
+* The historic map divides each cell's recorded fires by the span of the record: the years from the
+  first to the last year with a fire in those cells, inclusive. It divided by the number of distinct
+  years with a fire anywhere in the grid, which left fire-free years out and overstated the rate per
+  year. The log states the span, e.g. "historic record 1963-2025 (63 years)". The record is
+  unchanged: NBAC from `nbacStartYear`, NFDB before it.
+* **This changes `meanAnnualCumulBurnMapHistoric.tif`** in every cell: it is NA outside the
+  burnable cells (it held values in non-flammable cells and outside the study area), 0 in a burnable
+  cell with no recorded fire (was NA), and has the new divisor. The simulated map is now written too,
+  as `meanAnnualCumulBurnMap.tif`, on the same cells, and `cumulative_burn_maps.png` shows both on
+  these cells only. The log also gives both maps' mean rate over these cells. The fire-size CSVs and
+  figures are unchanged.
+
+## NFDB polygons fill only the years before NBAC begins (`1.1.0.9002`)
+
+* The historic burn map (multi mode) took NFDB polygons for any year with no NBAC fire inside the
+  study area, so a year from 1972 on with no NBAC fire there got NFDB perimeters, mixing the two
+  products. NFDB polygons now fill only the years before NBAC begins, set by the new parameter
+  `nbacStartYear` (default 1972), and NBAC supplies every year from then on.
+* NFDB polygons with no year (`YEAR = -9999`; 107 in the 2021-07-07 release) are dropped. They
+  passed the old year test, so they were counted in the historic burn map, though not in the number
+  of fire years that divides it.
+* **This changes `meanAnnualCumulBurnMapHistoric.tif`** wherever either case occurred: both the fire
+  counts and the number of fire years change. The log line "backfilling N NFDB-only year(s)" now
+  lists only years before `nbacStartYear`, and a second line counts the NFDB polygons not used.
 
 ## Multi mode runs when every replicate is fire-free (`1.1.0.9001`)
 

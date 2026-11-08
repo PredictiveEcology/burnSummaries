@@ -1,7 +1,7 @@
 ---
 title: "burnSummaries Manual"
-subtitle: "v.1.0.0"
-date: "Last updated: 2025-04-07"
+subtitle: "v.1.1.0.9003"
+date: "Last updated: 2026-11-05"
 output:
   bookdown::html_document2:
     toc: true
@@ -32,13 +32,13 @@ always_allow_html: true
 
 
 
-[![module-version-Badge](/Users/achubaty/Documents/GitHub/BC_HRV/modules/burnSummaries/figures/moduleVersionBadge.png)](ssh://git@github.com/PredictiveEcology/burnSummariesd0617cf79ffa92b19bf10118da9c5a864daf3638)
+[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries0342aa6595cd3856b9d5f517c54c152d8067fce6)
 
-[![Issues-badge](/Users/achubaty/Documents/GitHub/BC_HRV/modules/burnSummaries/figures/issuesBadge.png)](https://github.com/PredictiveEcology/burnSummaries/issues)
+[![Issues-badge](figures/issuesBadge.png)](https://github.com/PredictiveEcology/burnSummaries/issues)
 
 #### Authors:
 
-Alex M Chubaty <achubaty@for-cast.ca> [aut, cre] (<https://orcid.org/0000-0001-7146-8135>)
+Alex M Chubaty <achubaty@for-cast.ca> [aut, cre] (ORCID: <https://orcid.org/0000-0001-7146-8135>)
 <!-- ideally separate authors with new lines, '\n' not working -->
 
 :::{.rmdwarning}
@@ -60,7 +60,7 @@ Please report any discrepancies or omissions at <https://github.com/PredictiveEc
 
 Table \@ref(tab:moduleInputs-burnSummaries) shows the full list of module inputs.
 
-<table class="table" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;">
 <caption>(\#tab:moduleInputs-burnSummaries)(\#tab:moduleInputs-burnSummaries)List of (ref:burnSummaries) input objects and their description.</caption>
  <thead>
   <tr>
@@ -72,9 +72,57 @@ Table \@ref(tab:moduleInputs-burnSummaries) shows the full list of module inputs
  </thead>
 <tbody>
   <tr>
-   <td style="text-align:left;"> speciesLayers </td>
+   <td style="text-align:left;"> burnMap </td>
    <td style="text-align:left;"> SpatRaster </td>
-   <td style="text-align:left;"> initial percent cover raster layers used for simulation. </td>
+   <td style="text-align:left;"> Cumulative burn map. Required in single mode. </td>
+   <td style="text-align:left;"> NA </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> burnSummary </td>
+   <td style="text-align:left;"> data.table </td>
+   <td style="text-align:left;"> Fire summary table from `fireSense_burn` or `scfm`. One of `burnSummary` or `fireSizes` is required in single mode. </td>
+   <td style="text-align:left;"> NA </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> fireReturnInterval </td>
+   <td style="text-align:left;"> SpatRaster </td>
+   <td style="text-align:left;"> Fire return interval (years), on the grid of the saved `flammableMap`; LandMine's input of that name. Multi mode, optional: both burn maps are restricted to cells with an interval (not NA, above 0), the cells where LandMine ignites fires. </td>
+   <td style="text-align:left;"> NA </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> fireSizes </td>
+   <td style="text-align:left;"> list </td>
+   <td style="text-align:left;"> Fire sizes summary tables from LandMine. One of `burnSummary` or `fireSizes` is required in single mode. </td>
+   <td style="text-align:left;"> NA </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> flammableMap </td>
+   <td style="text-align:left;"> SpatRaster </td>
+   <td style="text-align:left;"> Binary flammability map. Required in single mode. </td>
+   <td style="text-align:left;"> NA </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> nonForest_timeSinceDisturbance </td>
+   <td style="text-align:left;"> SpatRaster </td>
+   <td style="text-align:left;"> map of time since last burn, with non-flammable pixels receiving `NA`. One of `rstTimeSinceFire` or `nonForest_timeSinceDisturbance` is required in single mode. </td>
+   <td style="text-align:left;"> NA </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> rstCurrentBurn </td>
+   <td style="text-align:left;"> SpatRaster </td>
+   <td style="text-align:left;"> Binary raster of fires, 1 meaning 'burned', 0 or NA is non-burned </td>
+   <td style="text-align:left;"> NA </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> rstTimeSinceFire </td>
+   <td style="text-align:left;"> SpatRaster </td>
+   <td style="text-align:left;"> map of time since last burn, with non-flammable pixels receiving `NA`. One of `rstTimeSinceFire` or `nonForest_timeSinceDisturbance` is required in single mode. </td>
+   <td style="text-align:left;"> NA </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> studyArea </td>
+   <td style="text-align:left;"> SpatVector </td>
+   <td style="text-align:left;"> Polygon of the area the fire model burns; LandMine's input of that name. Multi mode, optional: both burn maps are restricted to cells whose centre is inside it. An `sf` object is also accepted. </td>
    <td style="text-align:left;"> NA </td>
   </tr>
 </tbody>
@@ -83,7 +131,7 @@ Table \@ref(tab:moduleInputs-burnSummaries) shows the full list of module inputs
 Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnSummaries))
 
 
-<table class="table" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;">
 <caption>(\#tab:moduleParams-burnSummaries)(\#tab:moduleParams-burnSummaries)List of (ref:burnSummaries) parameters and their description.</caption>
  <thead>
   <tr>
@@ -93,32 +141,63 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
    <th style="text-align:left;"> min </th>
    <th style="text-align:left;"> max </th>
    <th style="text-align:left;"> paramDesc </th>
+   <th style="text-align:left;"> cacheKey </th>
   </tr>
  </thead>
 <tbody>
+  <tr>
+   <td style="text-align:left;"> dataYear </td>
+   <td style="text-align:left;"> integer </td>
+   <td style="text-align:left;"> 2020 </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> data year for the SCANFI stand-age inputs used to seed rstTimeSinceFire (single mode) </td>
+   <td style="text-align:left;"> TRUE </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> fireTimestep </td>
+   <td style="text-align:left;"> integer </td>
+   <td style="text-align:left;"> 1 </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> simulation time interval between burn events </td>
+   <td style="text-align:left;"> TRUE </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> mode </td>
+   <td style="text-align:left;"> character </td>
+   <td style="text-align:left;"> single </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> use 'single' to run part of a simulation; use 'multi' to run as part of postprocessing multiple runs. </td>
+   <td style="text-align:left;"> TRUE </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> nbacStartYear </td>
+   <td style="text-align:left;"> integer </td>
+   <td style="text-align:left;"> 1972 </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> first year of the historic fire record (multi mode) taken from NBAC perimeters; earlier years come from NFDB polygons. NBAC begins in 1972. </td>
+   <td style="text-align:left;"> TRUE </td>
+  </tr>
   <tr>
    <td style="text-align:left;"> reps </td>
    <td style="text-align:left;"> integer </td>
    <td style="text-align:left;"> 1, 2, 3,.... </td>
    <td style="text-align:left;"> 1 </td>
    <td style="text-align:left;"> NA </td>
-   <td style="text-align:left;"> number of replicates/runs per study area. </td>
-  </tr>
-  <tr>
-   <td style="text-align:left;"> simOutPrefix </td>
-   <td style="text-align:left;"> character </td>
-   <td style="text-align:left;"> mySimOut </td>
-   <td style="text-align:left;"> NA </td>
-   <td style="text-align:left;"> NA </td>
-   <td style="text-align:left;"> saved simList file prefix </td>
+   <td style="text-align:left;"> in single mode, should be length 1 indicating the replicate id; in multi mode, a vector of replicate IDs. </td>
+   <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
    <td style="text-align:left;"> simOutputPath </td>
    <td style="text-align:left;"> character </td>
-   <td style="text-align:left;"> /var/fol.... </td>
+   <td style="text-align:left;"> /tmp/Rtm.... </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> Directory specifying the location of the simulation outputs. </td>
+   <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
    <td style="text-align:left;"> simTimes </td>
@@ -127,30 +206,34 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> Simulation start and end times when running in 'multi' mode. </td>
+   <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
-   <td style="text-align:left;"> upload </td>
-   <td style="text-align:left;"> logical </td>
-   <td style="text-align:left;"> FALSE </td>
+   <td style="text-align:left;"> summaryInterval </td>
+   <td style="text-align:left;"> integer </td>
+   <td style="text-align:left;"> 100 </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
-   <td style="text-align:left;"> if TRUE, uses the `googledrive` package to upload figures. </td>
+   <td style="text-align:left;"> simulation time interval at which to take 'snapshots' used for summary analyses </td>
+   <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
-   <td style="text-align:left;"> uploadTo </td>
-   <td style="text-align:left;"> character </td>
+   <td style="text-align:left;"> summaryPeriod </td>
+   <td style="text-align:left;"> integer </td>
+   <td style="text-align:left;"> 700, 1000 </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
-   <td style="text-align:left;"> NA </td>
-   <td style="text-align:left;"> if `upload = TRUE`, a Google Drive folder id corresponding to `.studyAreaName`. </td>
+   <td style="text-align:left;"> lower and upper end of the range of simulation times used for summary analyses </td>
+   <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
    <td style="text-align:left;"> .plots </td>
    <td style="text-align:left;"> character </td>
-   <td style="text-align:left;"> screen </td>
+   <td style="text-align:left;"> png </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
-   <td style="text-align:left;"> Used by Plots function, which can be optionally used here </td>
+   <td style="text-align:left;"> Used by `Plots` function, which can be optionally used here. </td>
+   <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
    <td style="text-align:left;"> .plotInitialTime </td>
@@ -159,6 +242,7 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> Describes the simulation time at which the first plot event should occur. </td>
+   <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
    <td style="text-align:left;"> .plotInterval </td>
@@ -167,6 +251,7 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> Describes the simulation time interval between plot events. </td>
+   <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
    <td style="text-align:left;"> .saveInitialTime </td>
@@ -175,6 +260,7 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> Describes the simulation time at which the first save event should occur. </td>
+   <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
    <td style="text-align:left;"> .saveInterval </td>
@@ -183,6 +269,7 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> This describes the simulation time interval between save events. </td>
+   <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
    <td style="text-align:left;"> .studyAreaName </td>
@@ -191,6 +278,7 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> Human-readable name for the study area used - e.g., a hash of the studyarea obtained using `reproducible::studyAreaName()` </td>
+   <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
    <td style="text-align:left;"> .seed </td>
@@ -199,6 +287,7 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> Named list of seeds to use for each event (names). </td>
+   <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
    <td style="text-align:left;"> .useCache </td>
@@ -207,6 +296,7 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> Should caching of events or module be used? </td>
+   <td style="text-align:left;"> TRUE </td>
   </tr>
 </tbody>
 </table>
@@ -227,7 +317,7 @@ Write what is saved.
 
 Description of the module outputs (Table \@ref(tab:moduleOutputs-burnSummaries)).
 
-<table class="table" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;">
 <caption>(\#tab:moduleOutputs-burnSummaries)(\#tab:moduleOutputs-burnSummaries)List of (ref:burnSummaries) outputs and their description.</caption>
  <thead>
   <tr>
@@ -241,6 +331,11 @@ Description of the module outputs (Table \@ref(tab:moduleOutputs-burnSummaries))
    <td style="text-align:left;"> fireSizes </td>
    <td style="text-align:left;"> data.table </td>
    <td style="text-align:left;"> summary fire sizes table </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> rstTimeSinceFire </td>
+   <td style="text-align:left;"> SpatRaster </td>
+   <td style="text-align:left;"> map of time since last burn, with non-flammable pixels receiving `NA`. </td>
   </tr>
 </tbody>
 </table>

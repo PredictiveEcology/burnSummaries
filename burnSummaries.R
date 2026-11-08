@@ -21,10 +21,10 @@ defineModule(sim, list(
   ## built from the study area's outline so records near a curved or reprojected edge are kept. `archive` is not called here, but
   ## fireregimetools uses libarchive for extraction when it is installed, which handles the zip64
   ## archives R's internal unzip cannot -- so keep it available.
-  reqdPkgs = list("archive", "data.table", "dplyr", "PredictiveEcology/LandR@development",
+  reqdPkgs = list("archive", "data.table", "dplyr", "httr2", "PredictiveEcology/LandR@development",
                   "FOR-CAST/fireregimetools@main (>= 0.1.0.9008)",
-                  "ggplot2", "ggspatial", "patchwork",
-                  "reproducible",
+                  "ggplot2", "ggspatial", "googledrive", "patchwork",
+                  "reproducible", "sf",
                   ## dirnamesFromSet() (bare-number replicate folders), resolveSimYears(), padYears()
                   "PredictiveEcology/SpaDES.core@development (>= 3.2.1.9057)",
                   "stringr", "terra", "tidyterra"),
@@ -40,6 +40,9 @@ defineModule(sim, list(
     defineParameter("mode", "character", "single", NA, NA,
                     paste("use 'single' to run part of a simulation;",
                           "use 'multi' to run as part of postprocessing multiple runs.")),
+    defineParameter("nbacStartYear", "integer", 1972L, NA, NA,
+                    paste("first year of the historic fire record (multi mode) taken from NBAC",
+                          "perimeters; earlier years come from NFDB polygons. NBAC begins in 1972.")),
     defineParameter("reps", "integer", 1L:10L, 1L, NA_integer_,
                     paste("in single mode, should be length 1 indicating the replicate id;",
                           "in multi mode, a vector of replicate IDs.")),
@@ -82,6 +85,11 @@ defineModule(sim, list(
                  desc = paste("Optional, multi mode. List of `SpatVector` polygons of observed fires,",
                               "each with a `YEAR` column. If not supplied, NBAC perimeters",
                               "(with NFDB backfill) are downloaded.")),
+    expectsInput("fireReturnInterval", "SpatRaster",
+                 desc = paste("Fire return interval (years), on the grid of the saved `flammableMap`;",
+                              "LandMine's input of that name. Multi mode, optional: both burn maps are",
+                              "restricted to cells with an interval (not NA, above 0), the cells where",
+                              "LandMine ignites fires.")),
     expectsInput("fireSizes", "list",
                  desc = paste("Fire sizes summary tables from LandMine.",
                               "One of `burnSummary` or `fireSizes` is required in single mode.")),
@@ -100,6 +108,10 @@ defineModule(sim, list(
     expectsInput("rstTimeSinceFire", "SpatRaster",
                  desc = paste("map of time since last burn, with non-flammable pixels receiving `NA`.",
                               "One of `rstTimeSinceFire` or `nonForest_timeSinceDisturbance` is required in single mode.")),
+    expectsInput("studyArea", "SpatVector",
+                 desc = paste("Polygon of the area the fire model burns; LandMine's input of that name.",
+                              "Multi mode, optional: both burn maps are restricted to cells whose centre",
+                              "is inside it. An `sf` object is also accepted.")),
   ),
   outputObjects = bindrows(
     createsOutput("fireSizes", "data.table",
@@ -374,6 +386,10 @@ InitMulti <- function(sim) {
 
   meanAnnualCumulBurnMap <- burnMaps / length(mod$allReps)
 
+  ## The cells both maps cover, so that the historic and simulated rates are means over the same
+  ## cells: flammable, inside `studyArea`, with a fire return interval (see burnableCells()).
+  burnable <- burnableCells(flammableMap, sim$studyArea, sim$fireReturnInterval)
+
   firePolys <- if (exists("firePolys", envir(sim))) {
     ## polygons supplied on the simList: use them rather than re-fetching
     sim$firePolys |>
@@ -381,9 +397,9 @@ InitMulti <- function(sim) {
       tidyterra::mutate(YEAR = as.integer(YEAR))
   } else {
     ## Observed fire perimeters: NBAC (National Burned Area Composite -- satellite-derived,
-    ## 1972-present, the preferred source) supplemented with NFDB polygons ONLY for years
-    ## NBAC does not cover. Older NFDB perimeters are aerial sketches that overestimate
-    ## burned area, so NBAC is authoritative wherever it exists. Both are national CWFIS
+    ## 1972-present, the preferred source) supplemented with NFDB polygons ONLY for the years
+    ## before NBAC begins (historicFirePolys()). Older NFDB perimeters are aerial sketches that
+    ## overestimate burned area, so NBAC is authoritative wherever it exists. Both are national CWFIS
     ## downloads, harmonised (tolerant YEAR/SIZE_HA columns) + clipped to the sim grid via
     ## fireregimetools::fetch_nbac_polys() / fetch_nfdb_polys().
     message("preparing historical cumulative burn map using NBAC perimeters (+ NFDB backfill)...")
@@ -400,48 +416,38 @@ InitMulti <- function(sim) {
     nbac <- fireregimetools::fetch_nbac_polys(flammableMap, dest = dst)
     nfdb <- fireregimetools::fetch_nfdb_polys(flammableMap, dest = dst)
 
-    ## NBAC is authoritative; add NFDB polygons only for the years NBAC does not cover.
-    nbacYears <- sort(unique(nbac$YEAR))
-    backfill <- tidyterra::filter(nfdb, !(YEAR %in% !!nbacYears))
-    if (nrow(backfill) > 0) {
-      message(sprintf(
-        "  NBAC covers %d-%d; backfilling %d NFDB-only year(s): %s",
-        min(nbacYears), max(nbacYears), length(unique(backfill$YEAR)),
-        paste(sort(unique(backfill$YEAR)), collapse = ", ")
-      ))
-      tidyterra::bind_spat_rows(nbac[, "YEAR"], backfill[, "YEAR"])
-    } else {
-      nbac[, "YEAR"]
-    }
+    historicFirePolys(nbac, nfdb, nbacStartYear = P(sim)$nbacStartYear)
   }
 
-  if (!anyNA(P(sim)$historicYears)) {
-    firePolys <- firePolys[firePolys$YEAR >= P(sim)$historicYears[1] & firePolys$YEAR <= P(sim)$historicYears[2], ]
+  ## the `historicYears` window, and no undated fire (`YEAR` 0, -9999 or missing; historicFirePolys()
+  ## already drops these from the downloaded record, but supplied polygons may hold them)
+  hy <- P(sim)$historicYears
+  firePolys <- firePolys[which(firePolys$YEAR > 0 & (anyNA(hy) | (firePolys$YEAR >= hy[1] & firePolys$YEAR <= hy[2]))), ]
+  recordYears <- historicRecordYears(firePolys, flammableMap, burnable, hy)
+  meanAnnualCumulBurnMapHistoric <- historicBurnMap(firePolys, flammableMap, burnable, recordYears)
+  ## a burnable cell that no replicate burned has a rate of 0
+  meanAnnualCumulBurnMap <- onCells(meanAnnualCumulBurnMap, burnable)
+
+  ## Both maps are written, so the two can be compared cell by cell outside the module.
+  maps <- list(
+    meanAnnualCumulBurnMapHistoric = meanAnnualCumulBurnMapHistoric,
+    meanAnnualCumulBurnMap = meanAnnualCumulBurnMap
+  )
+  for (nm in names(maps)) {
+    f <- file.path(outputPath(sim), paste0(nm, ".tif"))
+    terra::writeRaster(maps[[nm]], f, overwrite = TRUE)
+    sim <- registerOutputs(f, sim)
   }
-  recordYears <- historicRecordYears(firePolys$YEAR, P(sim)$historicYears)
-  meanAnnualCumulBurnMapHistoric <- historicMeanAnnualBurnMap(firePolys, flammableMap, recordYears)
-  f_meanAnnualCumulBurnMapHistoric <- file.path(
-    outputPath(sim),
-    "meanAnnualCumulBurnMapHistoric.tif"
-  )
-  terra::writeRaster(
-    meanAnnualCumulBurnMapHistoric,
-    f_meanAnnualCumulBurnMapHistoric,
-    overwrite = TRUE
-  )
-  sim <- registerOutputs(f_meanAnnualCumulBurnMapHistoric, sim)
+  message(sprintf(
+    "  mean annual burn rate in the %d burnable cells (share burned per year): historic %s, simulated %s",
+    sum(burnable),
+    format(mean(terra::values(meanAnnualCumulBurnMapHistoric, mat = FALSE)[burnable]), digits = 4),
+    format(mean(terra::values(meanAnnualCumulBurnMap, mat = FALSE)[burnable]), digits = 4)
+  ))
   message("...done")
 
-  nonFlammable <- which(
-    is.na(terra::values(flammableMap, mat = FALSE)) | terra::values(flammableMap, mat = FALSE) == 0
-  )
-  if (length(nonFlammable) > 0) {
-    meanAnnualCumulBurnMap[nonFlammable] <- NA
-    meanAnnualCumulBurnMapHistoric[nonFlammable] <- NA
-    flammableMap[nonFlammable] <- NA
-  }
-
-  mod$flammableMap <- flammableMap
+  ## 1 on the burnable cells, NA elsewhere: the land of the observed fire regime, as of both maps
+  mod$burnableMap <- terra::rast(flammableMap, vals = ifelse(burnable, 1L, NA_integer_))
   mod$firePolys <- firePolys
   mod$recordYears <- recordYears
   mod$meanAnnualCumulBurnMap <- meanAnnualCumulBurnMap
@@ -467,6 +473,143 @@ repFiles <- function(repDirs, fname, files = NULL) {
     }
     f
   }, character(1), USE.NAMES = FALSE)
+}
+
+## The historic fire record, with only a `YEAR` column: NBAC perimeters from `nbacStartYear` on, and
+## NFDB polygons for the years before it. The boundary is a fixed year, not the years NBAC has inside
+## the study area: a year from 1972 on with no NBAC fire here is a year in which NBAC mapped none, and
+## filling it from the NFDB would mix the two products. NFDB polygons with no year (`YEAR` -9999, 0
+## or missing) are dropped.
+historicFirePolys <- function(nbac, nfdb, nbacStartYear) {
+  nbac <- nbac[which(nbac$YEAR >= nbacStartYear), "YEAR"]
+  nDated <- sum(nfdb$YEAR > 0, na.rm = TRUE)
+  backfill <- nfdb[which(nfdb$YEAR > 0 & nfdb$YEAR < nbacStartYear), "YEAR"]
+
+  years <- sort(unique(backfill$YEAR))
+  message(sprintf(
+    "  NBAC from %d: %d polygon(s); backfilling %d NFDB-only year(s): %s",
+    nbacStartYear, nrow(nbac), length(years), paste(years, collapse = ", ")
+  ))
+  if (nrow(backfill) < nrow(nfdb)) {
+    message(sprintf(
+      "  NFDB polygons not used: %d with no year, %d from %d on",
+      nrow(nfdb) - nDated, nDated - nrow(backfill), nbacStartYear
+    ))
+  }
+
+  if (nrow(backfill) == 0L) {
+    nbac
+  } else if (nrow(nbac) == 0L) {
+    backfill
+  } else {
+    tidyterra::bind_spat_rows(nbac, backfill)
+  }
+}
+
+## The cells both burn maps cover (multi mode), as a logical vector over the cells of `flammableMap`:
+## flammable (not NA, not 0), with the centre inside `studyArea`, and with a fire return interval
+## (not NA, above 0). For LandMine these are the cells where it ignites fires: it masks its spread
+## and rate-of-spread maps to `studyArea` and draws ignitions only where there is an interval. Its own
+## FRI diagnostics use the same cells. Its fires can also spread into flammable cells of the study
+## area that have no interval; those cells are left out here, as they are in the diagnostics.
+##
+## Through 1.1.0.9002 the historic map covered every flammable cell of the grid, which is the study
+## area's bounding box, so it took in fires LandMine could not simulate. 14-33% of the grid's
+## flammable cells in LandWeb lay outside the study area.
+##
+## `studyArea` or `fireReturnInterval` may be NULL: a fire model other than LandMine may have
+## neither. Each one missing restricts nothing, and a message says so. The maps then cover cells the
+## fire model may not burn, but they are still the same cells for both maps.
+burnableCells <- function(flammableMap, studyArea = NULL, fireReturnInterval = NULL) {
+  fv <- terra::values(flammableMap, mat = FALSE)
+  burnable <- !is.na(fv) & fv != 0
+  nFlammable <- sum(burnable)
+  kept <- "flammable"
+
+  if (is.null(studyArea)) {
+    message("  no `studyArea`: the burn maps include any flammable cells outside the area the fire model burns")
+  } else {
+    sa <- if (inherits(studyArea, "SpatVector")) studyArea else terra::vect(studyArea)
+    ## a polygon in another CRS would rasterize to no cell at all
+    if (!terra::same.crs(sa, flammableMap)) {
+      sa <- terra::project(sa, terra::crs(flammableMap))
+    }
+    inside <- !is.na(terra::values(terra::rasterize(sa, flammableMap, field = 1L), mat = FALSE))
+    burnable <- burnable & inside
+    kept <- c(kept, "inside `studyArea`")
+  }
+
+  if (is.null(fireReturnInterval)) {
+    message("  no `fireReturnInterval`: the burn maps include any flammable cells without a fire return interval")
+  } else {
+    terra::compareGeom(fireReturnInterval, flammableMap)
+    friv <- terra::values(fireReturnInterval, mat = FALSE)
+    burnable <- burnable & !is.na(friv) & friv > 0
+    kept <- c(kept, "with a fire return interval")
+  }
+
+  if (!any(burnable)) {
+    stop(
+      "No burnable cell: no cell of the grid is ", paste(kept, collapse = ", "), ". ",
+      "Check that `studyArea` and `fireReturnInterval` cover the simulated area."
+    )
+  }
+  message(sprintf(
+    "  burn maps cover %d burnable cells (%s) of %d flammable cells",
+    sum(burnable), paste(kept, collapse = ", "), nFlammable
+  ))
+  burnable
+}
+
+## The years of the observed record (multi mode): `historicYears` when it is set, else the first to the
+## last year with a fire in the burnable cells, inclusive. A year in that span with no fire there is a
+## year in which nothing burned, so the historic map is a rate per year, as the simulated one is.
+## Through 1.1.0.9002 the divisor was the number of distinct years with a fire anywhere in the grid's
+## bounding box, which left fire-free years out and so overstated the rate where they are common.
+## `integer(0)` when `historicYears` is unset and no fire touches a burnable cell.
+historicRecordYears <- function(firePolys, flammableMap, burnable, historicYears = c(NA, NA)) {
+  if (!anyNA(historicYears)) {
+    years <- seq(as.integer(historicYears[1]), as.integer(historicYears[2]))
+  } else {
+    years <- integer(0)
+    if (nrow(firePolys) > 0L) {
+      yearIn <- function(fun) {
+        v <- terra::values(terra::rasterize(firePolys, flammableMap, field = "YEAR", fun = fun), mat = FALSE)
+        v[burnable]
+      }
+      firstByCell <- yearIn("min")
+      if (any(!is.na(firstByCell))) {
+        years <- seq(as.integer(min(firstByCell, na.rm = TRUE)), as.integer(max(yearIn("max"), na.rm = TRUE)))
+      }
+    }
+  }
+  if (length(years)) {
+    message(sprintf("  historic record %d-%d (%d years)", min(years), max(years), length(years)))
+  } else {
+    message("  historic record: no fire in the burnable cells; the historic burn map is 0 there")
+  }
+  years
+}
+
+## The historic burn map (multi mode): recorded fires per cell, divided by the years of record
+## (`recordYears`, historicRecordYears()), on the cells in `burnable` and NA elsewhere. A fire counts
+## in a cell when its polygon covers the cell's centre, and a cell burned twice counts twice.
+historicBurnMap <- function(firePolys, flammableMap, burnable, recordYears) {
+  counts <- if (nrow(firePolys) > 0L) {
+    terra::rasterize(firePolys, flammableMap, field = "YEAR", fun = "count", background = 0)
+  } else {
+    terra::rast(flammableMap, vals = 0)
+  }
+  onCells(if (length(recordYears)) counts / length(recordYears) else counts, burnable)
+}
+
+## `x` on the cells in `burnable` only: NA elsewhere, and 0 where `x` is NA inside them (no burn
+## recorded is a burn rate of 0).
+onCells <- function(x, burnable) {
+  v <- terra::values(x, mat = FALSE)
+  v[is.na(v)] <- 0
+  v[!burnable] <- NA
+  terra::setValues(x, v)
 }
 
 FireSummaries <- function(sim) {
@@ -521,7 +664,7 @@ FireSummaries <- function(sim) {
   repIDs <- as.integer(sub("^\\D*", "", mod$allReps))
   mod$fireRegime <- rbind(
     simulatedFireRegime(sim$fireSizes, repIDs, P(sim)$simTimes, pixelHa),
-    observedFireRegime(mod$firePolys, mod$meanAnnualCumulBurnMapHistoric, mod$flammableMap, mod$recordYears)
+    observedFireRegime(mod$firePolys, mod$meanAnnualCumulBurnMapHistoric, mod$burnableMap, mod$recordYears)
   )
   mod$fireBlocks <- fireBlockTable(sim$fireSizes, repIDs, P(sim)$simTimes, P(sim)$summaryInterval, pixelHa)
   for (x in c("fireRegime", "fireBlocks")) {
@@ -531,23 +674,6 @@ FireSummaries <- function(sim) {
   }
 
   return(invisible(sim))
-}
-
-## Mean annual burn per cell of the historic record: the number of fire polygons covering a
-## cell, divided by the length of the record (`recordYears`, first to last year, inclusive). Dividing by
-## the number of years *with* fires would overstate it relative to the simulated map, which
-## is divided by the full simulation length.
-historicMeanAnnualBurnMap <- function(firePolys, flammableMap,
-                                      recordYears = historicRecordYears(firePolys$YEAR)) {
-  terra::rasterize(firePolys, flammableMap, field = "YEAR", fun = "count") / length(recordYears)
-}
-
-## The years of the observed record: `historicYears` when it is set, else the first to the last year
-## with a fire (years of 0 or less are unknown years, not part of the record).
-historicRecordYears <- function(years, historicYears = c(NA, NA)) {
-  if (!anyNA(historicYears)) return(seq(historicYears[1], historicYears[2]))
-  years <- years[years > 0]
-  seq(min(years), max(years))
 }
 
 ## The simulated fire regime, one row per replicate in `reps` (a replicate with no fire has 0 fires):
@@ -566,14 +692,17 @@ simulatedFireRegime <- function(fireSizes, reps, simTimes, pixelHa) {
 }
 
 ## The observed fire regime over the same land as the simulated one: area burned per year from the historic
-## mean annual burn map (`historic`, NA off flammable land), and the largest fire as the flammable land inside
-## its polygon (the simulation burns only flammable cells). `flammableMap` is 1 on flammable cells, NA elsewhere.
-observedFireRegime <- function(firePolys, historic, flammableMap, recordYears) {
-  pixelHa <- prod(terra::res(flammableMap)) / 10^4
+## mean annual burn map (`historic`, NA off the burnable cells), and the largest fire as the burnable land
+## inside its polygon (the simulation burns only those cells). `burnableMap` is 1 on the burnable cells
+## (burnableCells()), NA elsewhere. `recordYears` is historicRecordYears(); with no record, the first and
+## last years are NA.
+observedFireRegime <- function(firePolys, historic, burnableMap, recordYears) {
+  pixelHa <- prod(terra::res(burnableMap)) / 10^4
   largest <- if (nrow(firePolys)) {
-    max(terra::extract(flammableMap, firePolys, fun = sum, na.rm = TRUE, ID = FALSE)[[1]], na.rm = TRUE) * pixelHa
+    max(terra::extract(burnableMap, firePolys, fun = sum, na.rm = TRUE, ID = FALSE)[[1]], na.rm = TRUE) * pixelHa
   } else 0
-  data.frame(source = "observed", rep = NA_integer_, firstYear = min(recordYears), lastYear = max(recordYears),
+  span <- if (length(recordYears)) range(recordYears) else c(NA_integer_, NA_integer_)
+  data.frame(source = "observed", rep = NA_integer_, firstYear = span[1], lastYear = span[2],
              nFires = nrow(firePolys),
              areaBurnedHaPerYear = sum(terra::values(historic, mat = FALSE), na.rm = TRUE) * pixelHa,
              largestFireHa = if (is.finite(largest)) largest else 0)

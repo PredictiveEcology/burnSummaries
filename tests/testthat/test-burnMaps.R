@@ -21,22 +21,23 @@ test_that("historic mean annual burn divides by the record length, not the years
     crs = "EPSG:3857"
   )
   polys$YEAR <- c(2000L, 2009L)
-  cumul <- terra::rasterize(polys, flammable, field = "YEAR", fun = "count")
-  mm <- historicMeanAnnualBurnMap(polys, flammable)
-  expect_equal(terra::values(mm, mat = FALSE), terra::values(cumul, mat = FALSE) / 10)
-  expect_equal(max(terra::values(mm), na.rm = TRUE), 2 / 10)
+  burnable <- rep(TRUE, 4)
+  yrs <- suppressMessages(historicRecordYears(polys, flammable, burnable))
+  expect_identical(yrs, 2000:2009)
+  mm <- historicBurnMap(polys, flammable, burnable, yrs)
+  ## a burnable cell with no recorded fire has a rate of 0
+  expect_equal(terra::values(mm, mat = FALSE), c(2 / 10, 0, 0, 0))
 })
 
 test_that("historicYears sets the record length, so a record with fireless end years is not shortened", {
   flammable <- toyRaster(rep(1, 4))
   polys <- terra::vect("POLYGON ((0 1, 1 1, 1 2, 0 2, 0 1))", crs = "EPSG:3857")
   polys$YEAR <- 2000L
-  yrs <- historicRecordYears(polys$YEAR, c(1991L, 2010L))
+  burnable <- rep(TRUE, 4)
+  yrs <- suppressMessages(historicRecordYears(polys, flammable, burnable, c(1991L, 2010L)))
   expect_identical(yrs, 1991:2010)
-  mm <- historicMeanAnnualBurnMap(polys, flammable, yrs)
+  mm <- historicBurnMap(polys, flammable, burnable, yrs)
   expect_equal(max(terra::values(mm), na.rm = TRUE), 1 / 20)
-  ## unset: first to last year with a fire; unknown years (0) are not part of the record
-  expect_identical(historicRecordYears(c(0L, 1995L, 2004L)), 1995:2004)
 })
 
 test_that("the fire regime counts each replicate, including one with no fire", {
@@ -48,18 +49,28 @@ test_that("the fire regime counts each replicate, including one with no fire", {
   expect_equal(r$largestFireHa, c(50, 20, 0))
 })
 
-test_that("the observed regime counts flammable land only", {
+test_that("the observed regime counts burnable land only", {
   flammable <- toyRaster(c(1, 1, NA, 1)) ## cell 3 cannot burn
   polys <- terra::vect(c("POLYGON ((0 0, 2 0, 2 1, 0 1, 0 0))", "POLYGON ((0 1, 1 1, 1 2, 0 2, 0 1))"),
                        crs = "EPSG:3857") ## the bottom row (cells 3, 4) and cell 1
   polys$YEAR <- c(2001L, 2002L)
   yrs <- 2001:2010
-  historic <- terra::mask(historicMeanAnnualBurnMap(polys, flammable, yrs), flammable)
+  historic <- historicBurnMap(polys, flammable, !is.na(terra::values(flammable, mat = FALSE)), yrs)
   o <- observedFireRegime(polys, historic, flammable, yrs)
   pixHa <- prod(terra::res(flammable)) / 1e4
   expect_equal(o$areaBurnedHaPerYear, 2 * pixHa / 10) ## cells 1 and 4, once each, over 10 years
   expect_equal(o$largestFireHa, pixHa)                ## each fire covers one flammable cell
   expect_identical(c(o$firstYear, o$lastYear), c(2001L, 2010L))
+})
+
+test_that("the observed regime has no first or last year without a record", {
+  flammable <- toyRaster(rep(1, 4))
+  polys <- terra::vect("POLYGON ((0 1, 1 1, 1 2, 0 2, 0 1))", crs = "EPSG:3857")[0, ]
+  historic <- historicBurnMap(polys, flammable, rep(TRUE, 4), integer(0))
+  expect_equal(terra::values(historic, mat = FALSE), rep(0, 4))
+  o <- observedFireRegime(polys, historic, flammable, integer(0))
+  expect_identical(c(o$firstYear, o$lastYear), c(NA_integer_, NA_integer_))
+  expect_identical(o$areaBurnedHaPerYear, 0)
 })
 
 test_that("fire per block keeps blocks with no fire as zero", {
