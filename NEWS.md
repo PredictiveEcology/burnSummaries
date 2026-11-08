@@ -9,6 +9,9 @@
   (was: every fire in the grid's extent).
 * The simulated rows still count every cell a fire burned: `fireSizes` has no cell locations, so they cannot be
   cut to the burnable cells.
+* `burnSummaries_fireBlocks.csv` blocks now cover the years after `block` up to `block + summaryInterval`, like
+  `regimePeriod`; fires are stamped years 1 to the end, so the last year's fires fell outside every block.
+  The `fire_per_block.png` caption says burnable cells (was: flammable).
 * Multi mode no longer requires `reportingPolygons`, which the module never used.
 
 ## Supplied fire polygons and `historicYears` with the burnable cells

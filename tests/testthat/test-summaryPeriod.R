@@ -30,7 +30,6 @@ test_that("a supplied period outside the run is an error naming both ranges", {
 test_that("init stops on a supplied period outside the run", {
   sim <- suppressMessages(SpaDES.core::simInit(
     times = list(start = 0, end = 10), modules = moduleName, paths = testPaths,
-    objects = list(reportingPolygons = 1),
     params = list(burnSummaries = list(mode = "multi", summaryPeriod = c(700L, 1000L)))))
   expect_error(suppressMessages(SpaDES.core::spades(sim, debug = FALSE)),
                "summaryPeriod.*700.*1000.*0.*10")

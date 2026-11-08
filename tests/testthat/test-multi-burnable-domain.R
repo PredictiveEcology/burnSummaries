@@ -57,7 +57,7 @@ runMultiDomain <- function(out, objects = list(), params = list()) {
       summaryInterval = 1L, .studyAreaName = "test", .plots = NA_character_
     ), params)),
     modules = "burnSummaries",
-    objects = c(list(reportingPolygons = fires$nbac), objects),
+    objects = objects,
     paths = utils::modifyList(testPaths, list(outputPath = out))
   ))
   readMap <- function(f) {

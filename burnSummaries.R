@@ -730,7 +730,9 @@ observedFireRegime <- function(firePolys, historic, burnableMap, recordYears) {
 }
 
 ## Fire per block of `blockYears` years per replicate: number of fires and area burned (ha). A block with
-## no fire is 0, not missing. `block` = the block's first year; blocks start at `simTimes[1]`, and a last
+## no fire is 0, not missing. `block` = the year before the block's first: a block covers the fires of the years after `block` up to
+## `block + blockYears`, as `regimePeriod` does (fires are stamped years `simTimes[1] + 1` to `simTimes[2]`).
+## Blocks start at `simTimes[1]`, and a last
 ## block shorter than `blockYears` is left out.
 fireBlockTable <- function(fireSizes, reps, simTimes, blockYears, pixelHa) {
   starts <- seq(simTimes[1], simTimes[2] - blockYears, by = blockYears)
@@ -738,7 +740,7 @@ fireBlockTable <- function(fireSizes, reps, simTimes, blockYears, pixelHa) {
   sz <- as.numeric(fireSizes$simSize)
   out <- expand.grid(rep = reps, block = starts)
   inBlock <- lapply(seq_len(nrow(out)), function(i)
-    fireSizes$rep == out$rep[i] & yr >= out$block[i] & yr < out$block[i] + blockYears & sz > 0)
+    fireSizes$rep == out$rep[i] & yr > out$block[i] & yr <= out$block[i] + blockYears & sz > 0)
   out$nFires <- vapply(inBlock, sum, numeric(1))
   out$areaBurnedHa <- vapply(inBlock, function(k) sum(sz[k]) * pixelHa, numeric(1))
   out
@@ -763,7 +765,7 @@ fireBlockPlot <- function(data) {
     ggplot2::facet_wrap(~panel, ncol = 1, scales = "free_y") +
     ggplot2::labs(x = "Simulation year (middle of the block)", y = NULL, colour = "Replicate",
                   title = data$title,
-                  caption = sprintf("dashed: observed %d-%d burn rate, scaled to %d years (same land, flammable cells)",
+                  caption = sprintf("dashed: observed %d-%d burn rate, scaled to %d years (same land, burnable cells)",
                                     data$observed$firstYear, data$observed$lastYear, data$blockYears)) +
     ggplot2::theme_bw() + ggplot2::theme(legend.position = "bottom")
 }

@@ -105,3 +105,10 @@ test_that("the observed regime does not count fires outside the burnable cells",
   o <- observedFireRegime(polys, historic, flammable, yrs)
   expect_identical(o$nFires, 1L)
 })
+
+test_that("fire per block counts the fires of the run's last year in the last block", {
+  ## fires are stamped years 1 to end: blocks are (0, 10], (10, 20], (20, 30]
+  fs <- data.frame(rep = 1, year = c(1, 10, 11, 30), simSize = 1)
+  b <- fireBlockTable(fs, reps = 1, simTimes = c(0, 30), blockYears = 10, pixelHa = 1)
+  expect_equal(b$nFires, c(2, 1, 1))
+})
