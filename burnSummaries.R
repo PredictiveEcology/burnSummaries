@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.1.0.9003"),
+  version = list(burnSummaries = "1.1.0.9004"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -24,18 +24,30 @@ defineModule(sim, list(
   reqdPkgs = list("archive", "data.table", "dplyr", "httr2", "PredictiveEcology/LandR@development",
                   "FOR-CAST/fireregimetools@main (>= 0.1.0.9008)",
                   "ggplot2", "ggspatial", "googledrive", "patchwork",
-                  "reproducible", "sf", "SpaDES.core", "stringr", "terra", "tidyterra"),
+                  "reproducible", "sf",
+                  ## dirnamesFromSet() (bare-number replicate folders), resolveSimYears(), padYears()
+                  "PredictiveEcology/SpaDES.core@development (>= 3.2.1.9057)",
+                  "stringr", "terra", "tidyterra"),
   parameters = bindrows(
-    defineParameter("dataYear", "integer", 2020L, NA, NA,
+    defineParameter("dataYear", "numeric", 2020, NA, NA,
                     "data year for the SCANFI stand-age inputs used to seed rstTimeSinceFire (single mode)"),
     defineParameter("fireTimestep", "integer", 1L, NA, NA,
                     "simulation time interval between burn events"),
+    defineParameter("historicYears", "integer", c(NA_integer_, NA_integer_), NA, NA,
+                    paste("(multi mode) first and last year of the observed fire record used for the historic",
+                          "mean annual burn map and the observed row of the fire regime table, e.g.",
+                          "`c(1985L, 2024L)`. `NA` (the default) uses every year the record holds.")),
     defineParameter("mode", "character", "single", NA, NA,
                     paste("use 'single' to run part of a simulation;",
                           "use 'multi' to run as part of postprocessing multiple runs.")),
     defineParameter("nbacStartYear", "integer", 1972L, NA, NA,
                     paste("first year of the historic fire record (multi mode) taken from NBAC",
                           "perimeters; earlier years come from NFDB polygons. NBAC begins in 1972.")),
+    defineParameter("regimePeriod", "integer", c(NA_integer_, NA_integer_), NA, NA,
+                    paste("(multi mode) first and last simulation year the simulated rows of",
+                          "`burnSummaries_fireRegime.csv` cover: fires in the years after the first up to and",
+                          "including the last, e.g. `c(700L, 1000L)` to leave out a run's transient.",
+                          "`NA` (the default) covers the whole run, `simTimes`.")),
     defineParameter("reps", "integer", 1L:10L, 1L, NA_integer_,
                     paste("in single mode, should be length 1 indicating the replicate id;",
                           "in multi mode, a vector of replicate IDs.")),
@@ -45,8 +57,10 @@ defineModule(sim, list(
                     "Simulation start and end times when running in 'multi' mode."),
     defineParameter("summaryInterval", "integer", 100L, NA, NA,
                     "simulation time interval at which to take 'snapshots' used for summary analyses"),
-    defineParameter("summaryPeriod", "integer", start(sim) + c(700L, 1000L), NA, NA,
-                    "lower and upper end of the range of simulation times used for summary analyses"),
+    defineParameter("summaryPeriod", "integer", c(NA_integer_, NA_integer_), NA, NA,
+                    paste("lower and upper end of the range of simulation times used for summary analyses.",
+                          "`NA` (the default) means the last 30% of the run, which is years 700 to 1000 of a",
+                          "1000-year run; a run shorter than 1000 years gets a message with the period chosen.")),
     defineParameter(".plots", "character", "png", NA, NA,
                     "Used by `Plots` function, which can be optionally used here."),
     defineParameter(".plotInitialTime", "numeric", start(sim), NA, NA,
@@ -72,6 +86,10 @@ defineModule(sim, list(
     expectsInput("burnSummary", "data.table",
                  desc = paste("Fire summary table from `fireSense_burn` or `scfm`.",
                               "One of `burnSummary` or `fireSizes` is required in single mode.")),
+    expectsInput("firePolys", "list", sourceURL = NA,
+                 desc = paste("Optional, multi mode. List of `SpatVector` polygons of observed fires,",
+                              "each with a `YEAR` column. If not supplied, NBAC perimeters",
+                              "(with NFDB backfill) are downloaded.")),
     expectsInput("fireReturnInterval", "SpatRaster",
                  desc = paste("Fire return interval (years), on the grid of the saved `flammableMap`;",
                               "LandMine's input of that name. Multi mode, optional: both burn maps are",
@@ -83,6 +101,10 @@ defineModule(sim, list(
     expectsInput("flammableMap", "SpatRaster",
                  desc = paste("Binary flammability map.",
                               "Required in single mode.")),
+    expectsInput("outputsDF",  "data.table",
+                 desc = paste("Optional, multi mode. The rbindlisted `outputs(sim)` of all the sims",
+                              "being summarised, i.e., all the files that may exist.",
+                              "If not supplied, files are read from `outputPath(sim)/rep<NN>`.")),
     expectsInput("nonForest_timeSinceDisturbance",  "SpatRaster",
                  desc = paste("map of time since last burn, with non-flammable pixels receiving `NA`.",
                               "One of `rstTimeSinceFire` or `nonForest_timeSinceDisturbance` is required in single mode.")),
@@ -111,16 +133,13 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
   switch(
     eventType,
     init = {
-      if (min(P(sim)$summaryPeriod) < start(sim) || max(P(sim)$summaryPeriod) > end(sim)) {
-        stop("summaryPeriod values are outside the range of simulation times")
-      }
+      params(sim)$burnSummaries$summaryPeriod <- resolveSummaryPeriod(P(sim)$summaryPeriod, start(sim), end(sim))
 
       ## summary output times = seq over the summary period (inlined so this generic
       ## module does not depend on LandWebUtils::analysesOutputsTimes -- which is only
       ## loaded when a LandWeb module like NRV_summary is co-run, not in standalone
       ## mode="multi").
-      mod$analysesOutputsTimes <- start(sim) +
-        seq(P(sim)$summaryPeriod[1], P(sim)$summaryPeriod[2], by = P(sim)$summaryInterval)
+      mod$analysesOutputsTimes <- summaryTimes(P(sim)$summaryPeriod, P(sim)$summaryInterval)
 
       if (P(sim)$mode == "single") {
         sim <- InitSingle(sim)
@@ -134,10 +153,11 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
         sim <- scheduleEvent(sim, start(sim), "burnSummaries", "save_single", .first() + 1)
 
         ## The other saves come at the end of their year. A time equal to start(sim) is left out: a
-        ## second year-0 save would overwrite the one above. When the summary period starts at
+        ## second year-0 save would overwrite the one above; the summary period start and the end
+        ## are each scheduled once, even when they coincide. When the summary period starts at
         ## start(sim), the save above schedules the next snapshot.
-        later <- c(start(sim) + P(sim)$summaryPeriod[1], end(sim))
-        for (saveTime in later[later != start(sim)]) {
+        later <- c(P(sim)$summaryPeriod[1], end(sim))
+        for (saveTime in unique(later[later != start(sim)])) {
           sim <- scheduleEvent(sim, saveTime, "burnSummaries", "save_single", .last())
         }
       } else if (P(sim)$mode == "multi") {
@@ -223,8 +243,10 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
         terra::writeRaster(sim$rstTimeSinceFire, f_rstTimeSinceFire, datatype = "INT2U", overwrite = TRUE)
         sim <- registerOutputs(f_rstTimeSinceFire, sim)
 
-        if (time(sim) >= P(sim)$summaryPeriod[1] && time(sim) < P(sim)$summaryPeriod[2]) {
-          sim <- scheduleEvent(sim, time(sim) + P(sim)$summaryInterval, "burnSummaries", "save_single", .last())
+        ## the end is scheduled by init: do not schedule it a second time here
+        nextSave <- time(sim) + P(sim)$summaryInterval
+        if (time(sim) >= P(sim)$summaryPeriod[1] && time(sim) < P(sim)$summaryPeriod[2] && nextSave != end(sim)) {
+          sim <- scheduleEvent(sim, nextSave, "burnSummaries", "save_single", .last())
         }
       }
 
@@ -245,6 +267,41 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
 }
 
 ## event functions ------------------------------------------------------------------
+
+#' Times at which to summarise: `summaryPeriod` is in simulation times, so these are too
+#'
+#' @param period The resolved `summaryPeriod`.
+#' @param interval The `summaryInterval` parameter.
+#'
+#' @return A numeric vector of simulation times.
+summaryTimes <- function(period, interval) seq(period[1], period[2], by = interval)
+
+#' Resolve `summaryPeriod` against the run's times
+#'
+#' `NA` means the last 30% of the run: years 700 to 1000 of a 1000-year run, and the last 30% of a
+#' shorter one (a run longer than 1000 years still uses 700 to 1000). A period outside the run is
+#' an error.
+#'
+#' @param period The `summaryPeriod` parameter, length 2, `NA` for the default.
+#' @param start,end Start and end times of the simulation.
+#'
+#' @return An integer vector of length 2.
+resolveSummaryPeriod <- function(period, start, end) {
+  if (anyNA(period)) {
+    runLength <- end - start
+    period <- if (runLength >= 1000) start + c(700L, 1000L) else c(start + round(0.7 * runLength), end)
+    if (runLength < 1000) {
+      message("burnSummaries: `summaryPeriod` was not set and the run (", start, " to ", end,
+              ") is shorter than 1000 years, so summaries use the last 30% of the run: ",
+              period[1], " to ", period[2], ". Set `summaryPeriod` to choose another period.")
+    }
+  }
+  if (min(period) < start || max(period) > end) {
+    stop("summaryPeriod ", period[1], " to ", period[2], " is outside the simulation times ",
+         start, " to ", end, ". Set summaryPeriod within the run's times.")
+  }
+  as.integer(period)
+}
 
 InitSingle <- function(sim) {
   if (is.null(sim[["flammableMap"]])) {
@@ -293,22 +350,31 @@ InitSingle <- function(sim) {
 
 InitMulti <- function(sim) {
   ## check for necessary output files -----------------------------------------------
-  allReps <- sprintf("rep%02d", P(sim)$reps)
-  padL <- ceiling(log10(P(sim)$simTimes[2] + 1))
-  padYearStart <- paddedFloatToChar(P(sim)$simTimes[1], padL = padL)
-  padYearEnd <- paddedFloatToChar(P(sim)$simTimes[2], padL = padL)
+  mod$useOutputs <- NROW(sim$outputsDF) > 0
+  mod$outputFiles <- if (mod$useOutputs) unique(sim$outputsDF$file)
+  mod$repDirs <- if (mod$useOutputs) {
+    ## the replicate directories as they are named on disk (e.g. rep1 or rep01)
+    dirnamesFromSet(mod$outputFiles, P(sim)$reps, leafOnly = FALSE)
+  } else {
+    file.path(outputPath(sim), sprintf("rep%02d", P(sim)$reps))
+  }
+  mod$allReps <- basename(mod$repDirs)
+
+  ## assigned back: P(sim)$simTimes is read downstream, not just for padding
+  P(sim)$simTimes <- resolveSimYears(P(sim)$simTimes, sim)
+  pad <- padYears(P(sim)$simTimes)
 
   ## all reps have same flammable map
-  flm <- file.path(outputPath(sim), allReps[1], paste0("flammableMap_year", padYearEnd, ".tif"))
+  flm <- repFiles(mod$repDirs, paste0("flammableMap_year", pad$end, ".tif"), mod$outputFiles)[1]
 
   stopifnot(file.exists(flm))
 
   flammableMap <- terra::rast(flm)
   pixelSize <- terra::res(flammableMap) ## keep both x and y dimensions
 
-  burnMaps <- lapply(allReps, function(rep) {
+  fbms <- repFiles(mod$repDirs, paste0("burnMap_year", pad$end, ".tif"), mod$outputFiles)
+  burnMaps <- Map(rep = mod$allReps, fbm = fbms, function(rep, fbm) {
     message(paste("Loading burn maps for rep", rep, "..."))
-    fbm <- file.path(outputPath(sim), rep, paste0("burnMap_year", padYearEnd, ".tif"))
 
     stopifnot(file.exists(fbm))
 
@@ -323,20 +389,28 @@ InitMulti <- function(sim) {
     terra::rast() |>
     terra::app(sum, na.rm = TRUE)
 
-  meanAnnualCumulBurnMap <- burnMaps / length(allReps)
+  meanAnnualCumulBurnMap <- burnMaps / length(mod$allReps)
 
   ## The cells both maps cover, so that the historic and simulated rates are means over the same
   ## cells: flammable, inside `studyArea`, with a fire return interval (see burnableCells()).
   burnable <- burnableCells(flammableMap, sim$studyArea, sim$fireReturnInterval)
 
-  ## Observed fire perimeters: NBAC (National Burned Area Composite -- satellite-derived,
-  ## 1972-present, the preferred source) supplemented with NFDB polygons ONLY for the years
-  ## before NBAC begins (historicFirePolys()). Older NFDB perimeters are aerial sketches that
-  ## overestimate burned area, so NBAC is authoritative wherever it exists. Both are national CWFIS
-  ## downloads, harmonised (tolerant YEAR/SIZE_HA columns) + clipped to the sim grid via
-  ## fireregimetools::fetch_nbac_polys() / fetch_nfdb_polys().
-  message("preparing historical cumulative burn map using NBAC perimeters (+ NFDB backfill)...")
-  firePolys <- {
+  firePolys <- if (exists("firePolys", envir(sim))) {
+    ## polygons supplied on the simList: use them rather than re-fetching, projected and cropped to
+    ## the grid as the download is. rasterize() counts no cell of a polygon in another CRS, silently.
+    sim$firePolys |>
+      tidyterra::bind_spat_rows() |>
+      tidyterra::mutate(YEAR = as.integer(YEAR)) |>
+      terra::project(terra::crs(flammableMap)) |>
+      terra::crop(terra::ext(flammableMap))
+  } else {
+    ## Observed fire perimeters: NBAC (National Burned Area Composite -- satellite-derived,
+    ## 1972-present, the preferred source) supplemented with NFDB polygons ONLY for the years
+    ## before NBAC begins (historicFirePolys()). Older NFDB perimeters are aerial sketches that
+    ## overestimate burned area, so NBAC is authoritative wherever it exists. Both are national CWFIS
+    ## downloads, harmonised (tolerant YEAR/SIZE_HA columns) + clipped to the sim grid via
+    ## fireregimetools::fetch_nbac_polys() / fetch_nfdb_polys().
+    message("preparing historical cumulative burn map using NBAC perimeters (+ NFDB backfill)...")
     dst <- inputPath(sim)
 
     ## fireregimetools fetches + harmonises both archives: each is downloaded once per `dest`
@@ -353,8 +427,12 @@ InitMulti <- function(sim) {
     historicFirePolys(nbac, nfdb, nbacStartYear = P(sim)$nbacStartYear)
   }
 
-  meanAnnualCumulBurnMapHistoric <- historicBurnMap(firePolys, flammableMap, burnable)
-
+  ## the `historicYears` window, and no undated fire (`YEAR` 0, -9999 or missing; historicFirePolys()
+  ## already drops these from the downloaded record, but supplied polygons may hold them)
+  hy <- P(sim)$historicYears
+  firePolys <- firePolys[which(firePolys$YEAR > 0 & (anyNA(hy) | (firePolys$YEAR >= hy[1] & firePolys$YEAR <= hy[2]))), ]
+  recordYears <- historicRecordYears(firePolys, flammableMap, burnable, hy)
+  meanAnnualCumulBurnMapHistoric <- historicBurnMap(firePolys, flammableMap, burnable, recordYears)
   ## a burnable cell that no replicate burned has a rate of 0
   meanAnnualCumulBurnMap <- onCells(meanAnnualCumulBurnMap, burnable)
 
@@ -376,14 +454,10 @@ InitMulti <- function(sim) {
   ))
   message("...done")
 
-  nonFlammable <- which(
-    is.na(terra::values(flammableMap, mat = FALSE)) | terra::values(flammableMap, mat = FALSE) == 0
-  )
-  if (length(nonFlammable) > 0) {
-    flammableMap[nonFlammable] <- NA
-  }
-
-  mod$flammableMap <- flammableMap
+  ## 1 on the burnable cells, NA elsewhere: the land of the observed fire regime, as of both maps
+  mod$burnableMap <- terra::rast(flammableMap, vals = ifelse(burnable, 1L, NA_integer_))
+  mod$firePolys <- firePolys
+  mod$recordYears <- recordYears
   mod$meanAnnualCumulBurnMap <- meanAnnualCumulBurnMap
   mod$meanAnnualCumulBurnMapHistoric <- meanAnnualCumulBurnMapHistoric
   mod$pixelSize <- pixelSize
@@ -391,6 +465,22 @@ InitMulti <- function(sim) {
   # ! ----- STOP EDITING ----- ! #
 
   return(invisible(sim))
+}
+
+## The file `fname` in each replicate directory. With `files` (the files listed in `outputsDF`),
+## the directory and file name must match exactly, so that `rep1` does not also pick up `rep10`'s
+## files; without it, the path is built from the directory.
+repFiles <- function(repDirs, fname, files = NULL) {
+  if (is.null(files)) {
+    return(file.path(repDirs, fname))
+  }
+  vapply(repDirs, function(d) {
+    f <- files[dirname(files) == d & basename(files) == fname]
+    if (length(f) != 1L) {
+      stop("expected one ", fname, " in ", d, " in outputsDF; found ", length(f))
+    }
+    f
+  }, character(1), USE.NAMES = FALSE)
 }
 
 ## The historic fire record, with only a `YEAR` column: NBAC perimeters from `nbacStartYear` on, and
@@ -479,38 +569,46 @@ burnableCells <- function(flammableMap, studyArea = NULL, fireReturnInterval = N
   burnable
 }
 
-## The historic burn map (multi mode): recorded fires per cell, divided by the years of record, on the
-## cells in `burnable` and NA elsewhere. A fire counts in a cell when its polygon covers the cell's
-## centre, and a cell burned twice counts twice.
-##
-## The years of record run from the first to the last year with a fire in the burnable cells,
-## inclusive. A year in that span with no fire there is a year in which nothing burned, so the map is
-## a rate per year, as the simulated one is. Through 1.1.0.9002 the divisor was the number of distinct
-## years with a fire anywhere in the grid's bounding box, which left fire-free years out and so
-## overstated the rate where they are common.
-historicBurnMap <- function(firePolys, flammableMap, burnable) {
-  counts <- terra::rast(flammableMap, vals = 0)
-  first <- last <- NA_integer_
-  if (nrow(firePolys) > 0L) {
-    counts <- terra::rasterize(firePolys, flammableMap, field = "YEAR", fun = "count", background = 0)
-    yearIn <- function(fun) {
-      v <- terra::values(terra::rasterize(firePolys, flammableMap, field = "YEAR", fun = fun), mat = FALSE)
-      v[burnable]
-    }
-    firstByCell <- yearIn("min")
-    if (any(!is.na(firstByCell))) {
-      first <- as.integer(min(firstByCell, na.rm = TRUE))
-      last <- as.integer(max(yearIn("max"), na.rm = TRUE))
+## The years of the observed record (multi mode): `historicYears` when it is set, else the first to the
+## last year with a fire in the burnable cells, inclusive. A year in that span with no fire there is a
+## year in which nothing burned, so the historic map is a rate per year, as the simulated one is.
+## Through 1.1.0.9002 the divisor was the number of distinct years with a fire anywhere in the grid's
+## bounding box, which left fire-free years out and so overstated the rate where they are common.
+## `integer(0)` when `historicYears` is unset and no fire touches a burnable cell.
+historicRecordYears <- function(firePolys, flammableMap, burnable, historicYears = c(NA, NA)) {
+  if (!anyNA(historicYears)) {
+    years <- seq(as.integer(historicYears[1]), as.integer(historicYears[2]))
+  } else {
+    years <- integer(0)
+    if (nrow(firePolys) > 0L) {
+      yearIn <- function(fun) {
+        v <- terra::values(terra::rasterize(firePolys, flammableMap, field = "YEAR", fun = fun), mat = FALSE)
+        v[burnable]
+      }
+      firstByCell <- yearIn("min")
+      if (any(!is.na(firstByCell))) {
+        years <- seq(as.integer(min(firstByCell, na.rm = TRUE)), as.integer(max(yearIn("max"), na.rm = TRUE)))
+      }
     }
   }
-
-  if (is.na(first)) {
+  if (length(years)) {
+    message(sprintf("  historic record %d-%d (%d years)", min(years), max(years), length(years)))
+  } else {
     message("  historic record: no fire in the burnable cells; the historic burn map is 0 there")
-    return(onCells(counts, burnable))
   }
-  nYears <- last - first + 1L
-  message(sprintf("  historic record %d-%d (%d years)", first, last, nYears))
-  onCells(counts / nYears, burnable)
+  years
+}
+
+## The historic burn map (multi mode): recorded fires per cell, divided by the years of record
+## (`recordYears`, historicRecordYears()), on the cells in `burnable` and NA elsewhere. A fire counts
+## in a cell when its polygon covers the cell's centre, and a cell burned twice counts twice.
+historicBurnMap <- function(firePolys, flammableMap, burnable, recordYears) {
+  counts <- if (nrow(firePolys) > 0L) {
+    terra::rasterize(firePolys, flammableMap, field = "YEAR", fun = "count", background = 0)
+  } else {
+    terra::rast(flammableMap, vals = 0)
+  }
+  onCells(if (length(recordYears)) counts / length(recordYears) else counts, burnable)
 }
 
 ## `x` on the cells in `burnable` only: NA elsewhere, and 0 where `x` is NA inside them (no burn
@@ -523,35 +621,44 @@ onCells <- function(x, burnable) {
 }
 
 FireSummaries <- function(sim) {
-  allReps <- sprintf("rep%02d", P(sim)$reps)
-  padL <- ceiling(log10(P(sim)$simTimes[2] + 1))
-  padYearStart <- paddedFloatToChar(P(sim)$simTimes[1], padL = padL)
-  padYearEnd <- paddedFloatToChar(P(sim)$simTimes[2], padL = padL)
+  pad <- padYears(P(sim)$simTimes)
 
   studyAreaName <- P(sim)$.studyAreaName
 
-  ## read every replicate's fire-size parquet partition as one lazy Arrow dataset;
-  ## open_burn_dataset() skips reps with no fires / missing output rather than erroring.
-  roots <- file.path(outputPath(sim), allReps, "burnSummaries_fireSizes")
-  ds <- fireregimetools::open_burn_dataset(roots)
-  sim$fireSizes <- if (is.null(ds)) {
-    ## No replicate had a fire, so none wrote a parquet (write_burn_parquet() skips an empty
-    ## table) and there is no schema to read. A table with no columns wrote an empty CSV and
-    ## stopped plotFun() at `simArea`, so give it the columns and types a replicate with
-    ## LandMine fires reads back: create_fireSizes' columns, plus the parquet's `replicate`.
-    data.table::data.table(
-      simArea = character(0),
-      rep = integer(0),
-      year = character(0),
-      simSize = integer(0),
-      expSize = integer(0),
-      fireID = integer(0),
-      attempt = integer(0),
-      targetSize = numeric(0),
-      replicate = integer(0)
-    )
+  if (mod$useOutputs) {
+    ## registerOutputs() records the CSV; the parquet partition is not registered, so
+    ## outputs(sim) is what drives this arm.
+    f_csvs <- repFiles(mod$repDirs, "burnSummaries_fireSizes.csv", mod$outputFiles)
+    sim$fireSizes <- lapply(f_csvs, function(f_fireSizes) {
+      stopifnot(file.exists(f_fireSizes))
+
+      data.table::fread(f_fireSizes)
+    }) |>
+      data.table::rbindlist()
   } else {
-    data.table::as.data.table(dplyr::collect(ds))
+    ## read every replicate's fire-size parquet partition as one lazy Arrow dataset;
+    ## open_burn_dataset() skips reps with no fires / missing output rather than erroring.
+    roots <- file.path(mod$repDirs, "burnSummaries_fireSizes")
+    ds <- fireregimetools::open_burn_dataset(roots)
+    sim$fireSizes <- if (is.null(ds)) {
+      ## No replicate had a fire, so none wrote a parquet (write_burn_parquet() skips an empty
+      ## table) and there is no schema to read. A table with no columns wrote an empty CSV and
+      ## stopped plotFun() at `simArea`, so give it the columns and types a replicate with
+      ## LandMine fires reads back: create_fireSizes' columns, plus the parquet's `replicate`.
+      data.table::data.table(
+        simArea = character(0),
+        rep = integer(0),
+        year = character(0),
+        simSize = integer(0),
+        expSize = integer(0),
+        fireID = integer(0),
+        attempt = integer(0),
+        targetSize = numeric(0),
+        replicate = integer(0)
+      )
+    } else {
+      data.table::as.data.table(dplyr::collect(ds))
+    }
   }
 
   f_out <- file.path(outputPath(sim), paste0("burnSummaries_fireSizes_allReps.csv"))
@@ -560,7 +667,136 @@ FireSummaries <- function(sim) {
   ## TODO: add this file to list of outputs
   sim <- registerOutputs(f_out, sim)
 
+  ## the fire regime per replicate and observed, and the fire per block of `summaryInterval` years
+  pixelHa <- prod(mod$pixelSize) / 10^4
+  repIDs <- as.integer(sub("^\\D*", "", mod$allReps))
+  mod$fireRegime <- rbind(
+    simulatedFireRegime(sim$fireSizes, repIDs, P(sim)$simTimes, pixelHa,
+                        resolveRegimePeriod(P(sim)$regimePeriod, P(sim)$simTimes)),
+    observedFireRegime(mod$firePolys, mod$meanAnnualCumulBurnMapHistoric, mod$burnableMap, mod$recordYears)
+  )
+  mod$fireBlocks <- fireBlockTable(sim$fireSizes, repIDs, P(sim)$simTimes, P(sim)$summaryInterval, pixelHa)
+  for (x in c("fireRegime", "fireBlocks")) {
+    f <- file.path(outputPath(sim), paste0("burnSummaries_", x, ".csv"))
+    data.table::fwrite(mod[[x]], f)
+    sim <- registerOutputs(f, sim)
+  }
+
   return(invisible(sim))
+}
+
+## The years the simulated fire regime covers: `regimePeriod` when set, else the whole run, `simTimes`.
+resolveRegimePeriod <- function(regimePeriod, simTimes) {
+  if (anyNA(regimePeriod)) return(simTimes)
+  if (regimePeriod[1] >= regimePeriod[2] || regimePeriod[1] < simTimes[1] || regimePeriod[2] > simTimes[2]) {
+    stop("regimePeriod ", regimePeriod[1], " to ", regimePeriod[2], " is not within the simulation times ",
+         simTimes[1], " to ", simTimes[2], ". Set regimePeriod within the run's times.")
+  }
+  regimePeriod
+}
+
+## The simulated fire regime, one row per replicate in `reps` (a replicate with no fire has 0 fires):
+## the number of fires, the area burned per year (the cells of the fires in the years after `period[1]`
+## up to `period[2]`, over those years) and the largest fire, in ha. `period` is the whole run,
+## `simTimes`, unless given (resolveRegimePeriod()); the simulated mean annual burn map is always the
+## whole run. `fireSizes` has columns rep, year and simSize (cells). A fire's size is all the cells it
+## burned: the table has no cell locations, so it cannot be cut to the burnable cells as the maps and the
+## observed row are.
+simulatedFireRegime <- function(fireSizes, reps, simTimes, pixelHa, period = simTimes) {
+  nYears <- period[2] - period[1]
+  inPeriod <- as.numeric(fireSizes$year) > period[1] & as.numeric(fireSizes$year) <= period[2]
+  do.call(rbind, lapply(reps, function(r) {
+    s <- as.numeric(fireSizes$simSize[fireSizes$rep == r & inPeriod])
+    s <- s[s > 0]
+    data.frame(source = "simulated", rep = r, firstYear = period[1], lastYear = period[2],
+               nFires = length(s), areaBurnedHaPerYear = sum(s) * pixelHa / nYears,
+               largestFireHa = if (length(s)) max(s) * pixelHa else 0)
+  }))
+}
+
+## The observed fire regime over the same land as the simulated one: area burned per year from the historic
+## mean annual burn map (`historic`, NA off the burnable cells), and the number of fires and the largest fire
+## from the burnable land inside each polygon (a fire with no burnable cell is not counted). `burnableMap` is
+## 1 on the burnable cells (burnableCells()), NA elsewhere. `recordYears` is historicRecordYears(); with no
+## record, the first and last years are NA.
+observedFireRegime <- function(firePolys, historic, burnableMap, recordYears) {
+  pixelHa <- prod(terra::res(burnableMap)) / 10^4
+  burnableCellsIn <- if (nrow(firePolys)) {
+    terra::extract(burnableMap, firePolys, fun = sum, na.rm = TRUE, ID = FALSE)[[1]]
+  } else numeric(0)
+  largest <- if (length(burnableCellsIn)) max(burnableCellsIn, na.rm = TRUE) * pixelHa else 0
+  span <- if (length(recordYears)) range(recordYears) else c(NA_integer_, NA_integer_)
+  data.frame(source = "observed", rep = NA_integer_, firstYear = span[1], lastYear = span[2],
+             nFires = sum(burnableCellsIn > 0, na.rm = TRUE),
+             areaBurnedHaPerYear = sum(terra::values(historic, mat = FALSE), na.rm = TRUE) * pixelHa,
+             largestFireHa = if (is.finite(largest)) largest else 0)
+}
+
+## Fire per block of `blockYears` years per replicate: number of fires and area burned (ha). A block with
+## no fire is 0, not missing. `block` = the year before the block's first: a block covers the fires of the
+## years after `block` up to `block + blockYears`, as `regimePeriod` does (fires are stamped years
+## `simTimes[1] + 1` to `simTimes[2]`). Blocks start at `simTimes[1]`, and a last block shorter than
+## `blockYears` is left out.
+fireBlockTable <- function(fireSizes, reps, simTimes, blockYears, pixelHa) {
+  starts <- seq(simTimes[1], simTimes[2] - blockYears, by = blockYears)
+  yr <- as.numeric(fireSizes$year)
+  sz <- as.numeric(fireSizes$simSize)
+  out <- expand.grid(rep = reps, block = starts)
+  inBlock <- lapply(seq_len(nrow(out)), function(i)
+    fireSizes$rep == out$rep[i] & yr > out$block[i] & yr <= out$block[i] + blockYears & sz > 0)
+  out$nFires <- vapply(inBlock, sum, numeric(1))
+  out$areaBurnedHa <- vapply(inBlock, function(k) sum(sz[k]) * pixelHa, numeric(1))
+  out
+}
+
+## Area burned and number of fires per block, one line per replicate, with the observed burn rate scaled
+## to a block (dashed) on the area panel. `data` = list(blocks = fireBlockTable(), observed = one row of
+## observedFireRegime(), blockYears =, title =).
+fireBlockPlot <- function(data) {
+  b <- data$blocks
+  long <- rbind(
+    data.frame(rep = b$rep, block = b$block, value = b$areaBurnedHa / 1000,
+               panel = sprintf("Area burned per %d years (thousand ha)", data$blockYears)),
+    data.frame(rep = b$rep, block = b$block, value = b$nFires,
+               panel = sprintf("Number of fires per %d years", data$blockYears))
+  )
+  obs <- data.frame(panel = sprintf("Area burned per %d years (thousand ha)", data$blockYears),
+                    y = data$observed$areaBurnedHaPerYear * data$blockYears / 1000)
+  ggplot2::ggplot(long, ggplot2::aes(block + data$blockYears / 2, value, colour = factor(rep))) +
+    ggplot2::geom_line() + ggplot2::geom_point() +
+    ggplot2::geom_hline(data = obs, ggplot2::aes(yintercept = y), linetype = "dashed", colour = "black") +
+    ggplot2::facet_wrap(~panel, ncol = 1, scales = "free_y") +
+    ggplot2::labs(x = "Simulation year (middle of the block)", y = NULL, colour = "Replicate",
+                  title = data$title,
+                  caption = sprintf("dashed: observed %d-%d burn rate, scaled to %d years (same land, burnable cells)",
+                                    data$observed$firstYear, data$observed$lastYear, data$blockYears)) +
+    ggplot2::theme_bw() + ggplot2::theme(legend.position = "bottom")
+}
+
+## Side-by-side historic and simulated mean annual burn maps on one fill scale.
+cumulBurnMapPlots <- function(historic, simulated, studyAreaName, use_palette = "muted") {
+  limits <- range(c(terra::values(historic), terra::values(simulated)), finite = TRUE)
+  legendTitle <- "Mean annual burn\n(burns per cell per year)"
+
+  mapPlot <- function(r, title) {
+    ggplot2::ggplot() +
+      tidyterra::geom_spatraster(data = r) +
+      tidyterra::scale_fill_whitebox_c(palette = use_palette, limits = limits, name = legendTitle) +
+      ggplot2::theme_bw() +
+      ggspatial::annotation_north_arrow(
+        location = "bl",
+        which_north = "true",
+        pad_x = ggplot2::unit(0.25, "in"),
+        pad_y = ggplot2::unit(0.25, "in"),
+        style = north_arrow_fancy_orienteering
+      ) +
+      ggplot2::xlab("Longitude") +
+      ggplot2::ylab("Latitude") +
+      ggplot2::ggtitle(paste(title, "mean annual cumulative burn map for", studyAreaName))
+  }
+
+  (mapPlot(historic, "Historic") | mapPlot(simulated, "Simulated")) +
+    patchwork::plot_layout(guides = "collect")
 }
 
 ### template for plot events
@@ -571,42 +807,26 @@ plotFun <- function(sim) {
   ## cumulative burn maps
   use_palette = "muted" # "bl_yl_rd"
 
-  ggCumulBurnMapExp <- ggplot2::ggplot() +
-    tidyterra::geom_spatraster(data = mod$meanAnnualCumulBurnMapHistoric) +
-    tidyterra::scale_fill_whitebox_c(palette = use_palette) +
-    ggplot2::theme_bw() +
-    ggspatial::annotation_north_arrow(
-      location = "bl",
-      which_north = "true",
-      pad_x = ggplot2::unit(0.25, "in"),
-      pad_y = ggplot2::unit(0.25, "in"),
-      style = north_arrow_fancy_orienteering
-    ) +
-    ggplot2::xlab("Longitude") +
-    ggplot2::ylab("Latitude") +
-    ggplot2::ggtitle(paste("Historic mean annual cumulative burn map for", studyAreaName))
-
-  ggCumulBurnMapSim <- ggplot2::ggplot() +
-    tidyterra::geom_spatraster(data = mod$meanAnnualCumulBurnMap) +
-    tidyterra::scale_fill_whitebox_c(palette = use_palette) +
-    ggplot2::theme_bw() +
-    ggspatial::annotation_north_arrow(
-      location = "bl",
-      which_north = "true",
-      pad_x = ggplot2::unit(0.25, "in"),
-      pad_y = ggplot2::unit(0.25, "in"),
-      style = north_arrow_fancy_orienteering
-    ) +
-    ggplot2::xlab("Longitude") +
-    ggplot2::ylab("Latitude") +
-    ggplot2::ggtitle(paste("Simulated mean annual cumulative burn map for", studyAreaName))
+  ggCumulBurnMap <- cumulBurnMapPlots(
+    mod$meanAnnualCumulBurnMapHistoric,
+    mod$meanAnnualCumulBurnMap,
+    studyAreaName,
+    use_palette
+  )
 
   if ("png" %in% P(sim)$.plots) {
     fggCumulBurnMap <- file.path(figurePath(sim), "cumulative_burn_maps.png")
-    ggCumulBurnMap <- (ggCumulBurnMapExp | ggCumulBurnMapSim)
     ggplot2::ggsave(fggCumulBurnMap, ggCumulBurnMap, height = 10, width = 20, type = "cairo")
     sim <- registerOutputs(fggCumulBurnMap, sim)
   }
+
+  ## fire per block of summaryInterval years, by replicate, against the observed rate
+  Plots(
+    data = list(blocks = mod$fireBlocks, observed = mod$fireRegime[mod$fireRegime$source == "observed", ],
+                blockYears = P(sim)$summaryInterval, title = paste("Fire per", P(sim)$summaryInterval, "years in", studyAreaName)),
+    fn = fireBlockPlot, filename = "fire_per_block", path = figurePath(sim),
+    types = P(sim)$.plots, ggsaveArgs = list(width = 8, height = 6, units = "in")
+  )
 
   ## fire size histograms w/ median fire sizes
   pixelSizeHa <- prod(mod$pixelSize) / 10^4
@@ -715,6 +935,8 @@ plotFun <- function(sim) {
 }
 
 .inputObjects <- function(sim) {
+  ## the same data year as the vegetation modules (Biomass_core, Biomass_borealDataPrep, ...)
+  paramCheckOtherMods(sim, "dataYear", ifSetButDifferent = "error")
   ## NOTE: fireSize table can be derived from 'burnSummary' or 'fireSize' objects,
   ## so don't implement a hard requirement for either here.
   if (P(sim)$mode == "single") {
@@ -747,8 +969,6 @@ plotFun <- function(sim) {
         sim$rstTimeSinceFire[] <- as.integer(sim$rstTimeSinceFire[])
       }
     }
-  } else if (P(sim)$mode == "multi") {
-    stopifnot(suppliedElsewhere("reportingPolygons", sim))
   }
 
   return(invisible(sim))

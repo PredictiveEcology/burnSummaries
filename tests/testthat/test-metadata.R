@@ -22,10 +22,12 @@ test_that("inputs are the expected names and classes", {
     c(
       "burnMap"                        = "SpatRaster",
       "burnSummary"                    = "data.table",
+      "firePolys"                      = "list",
       "fireReturnInterval"             = "SpatRaster",
       "fireSizes"                      = "list",
       "flammableMap"                   = "SpatRaster",
       "nonForest_timeSinceDisturbance" = "SpatRaster",
+      "outputsDF"                      = "data.table",
       "rstCurrentBurn"                 = "SpatRaster",
       "rstTimeSinceFire"               = "SpatRaster",
       "studyArea"                      = "SpatVector"
@@ -53,7 +55,7 @@ test_that("parameters are the expected names", {
     c(
       ".plotInitialTime", ".plotInterval", ".plots", ".saveInitialTime",
       ".saveInterval", ".seed", ".studyAreaName", ".useCache", "dataYear",
-      "fireTimestep", "mode", "nbacStartYear", "reps", "simOutputPath", "simTimes", "summaryInterval",
+      "fireTimestep", "historicYears", "mode", "nbacStartYear", "regimePeriod", "reps", "simOutputPath", "simTimes", "summaryInterval",
       "summaryPeriod"
 )
   )

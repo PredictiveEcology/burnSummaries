@@ -88,7 +88,6 @@ test_that("the historic burn map takes NFDB only before 1972 and drops undated p
       summaryInterval = 1L, .studyAreaName = "test", .plots = NA_character_
     )),
     modules = "burnSummaries",
-    objects = list(reportingPolygons = nbac),
     paths = utils::modifyList(testPaths, list(outputPath = out))
   )
 

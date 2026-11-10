@@ -1,7 +1,7 @@
 ---
 title: "burnSummaries Manual"
-subtitle: "v.1.1.0.9003"
-date: "Last updated: 2026-11-05"
+subtitle: "v.1.1.0.9004"
+date: "Last updated: 2026-11-10"
 output:
   bookdown::html_document2:
     toc: true
@@ -32,7 +32,7 @@ always_allow_html: true
 
 
 
-[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries0342aa6595cd3856b9d5f517c54c152d8067fce6)
+[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries1602b28d053d55cb097120029f93b3b804d2805e)
 
 [![Issues-badge](figures/issuesBadge.png)](https://github.com/PredictiveEcology/burnSummaries/issues)
 
@@ -84,6 +84,12 @@ Table \@ref(tab:moduleInputs-burnSummaries) shows the full list of module inputs
    <td style="text-align:left;"> NA </td>
   </tr>
   <tr>
+   <td style="text-align:left;"> firePolys </td>
+   <td style="text-align:left;"> list </td>
+   <td style="text-align:left;"> Optional, multi mode. List of `SpatVector` polygons of observed fires, each with a `YEAR` column. If not supplied, NBAC perimeters (with NFDB backfill) are downloaded. </td>
+   <td style="text-align:left;"> NA </td>
+  </tr>
+  <tr>
    <td style="text-align:left;"> fireReturnInterval </td>
    <td style="text-align:left;"> SpatRaster </td>
    <td style="text-align:left;"> Fire return interval (years), on the grid of the saved `flammableMap`; LandMine's input of that name. Multi mode, optional: both burn maps are restricted to cells with an interval (not NA, above 0), the cells where LandMine ignites fires. </td>
@@ -99,6 +105,12 @@ Table \@ref(tab:moduleInputs-burnSummaries) shows the full list of module inputs
    <td style="text-align:left;"> flammableMap </td>
    <td style="text-align:left;"> SpatRaster </td>
    <td style="text-align:left;"> Binary flammability map. Required in single mode. </td>
+   <td style="text-align:left;"> NA </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> outputsDF </td>
+   <td style="text-align:left;"> data.table </td>
+   <td style="text-align:left;"> Optional, multi mode. The rbindlisted `outputs(sim)` of all the sims being summarised, i.e., all the files that may exist. If not supplied, files are read from `outputPath(sim)/rep&lt;NN&gt;`. </td>
    <td style="text-align:left;"> NA </td>
   </tr>
   <tr>
@@ -147,7 +159,7 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
 <tbody>
   <tr>
    <td style="text-align:left;"> dataYear </td>
-   <td style="text-align:left;"> integer </td>
+   <td style="text-align:left;"> numeric </td>
    <td style="text-align:left;"> 2020 </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
@@ -161,6 +173,15 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> simulation time interval between burn events </td>
+   <td style="text-align:left;"> TRUE </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> historicYears </td>
+   <td style="text-align:left;"> integer </td>
+   <td style="text-align:left;"> NA, NA </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> (multi mode) first and last year of the observed fire record used for the historic mean annual burn map and the observed row of the fire regime table, e.g. `c(1985L, 2024L)`. `NA` (the default) uses every year the record holds. </td>
    <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
@@ -179,6 +200,15 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> first year of the historic fire record (multi mode) taken from NBAC perimeters; earlier years come from NFDB polygons. NBAC begins in 1972. </td>
+   <td style="text-align:left;"> TRUE </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> regimePeriod </td>
+   <td style="text-align:left;"> integer </td>
+   <td style="text-align:left;"> NA, NA </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> (multi mode) first and last simulation year the simulated rows of `burnSummaries_fireRegime.csv` cover: fires in the years after the first up to and including the last, e.g. `c(700L, 1000L)` to leave out a run's transient. `NA` (the default) covers the whole run, `simTimes`. </td>
    <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
@@ -220,10 +250,10 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
   <tr>
    <td style="text-align:left;"> summaryPeriod </td>
    <td style="text-align:left;"> integer </td>
-   <td style="text-align:left;"> 700, 1000 </td>
+   <td style="text-align:left;"> NA, NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
-   <td style="text-align:left;"> lower and upper end of the range of simulation times used for summary analyses </td>
+   <td style="text-align:left;"> lower and upper end of the range of simulation times used for summary analyses. `NA` (the default) means the last 30% of the run, which is years 700 to 1000 of a 1000-year run; a run shorter than 1000 years gets a message with the period chosen. </td>
    <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
