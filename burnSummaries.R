@@ -396,10 +396,13 @@ InitMulti <- function(sim) {
   burnable <- burnableCells(flammableMap, sim$studyArea, sim$fireReturnInterval)
 
   firePolys <- if (exists("firePolys", envir(sim))) {
-    ## polygons supplied on the simList: use them rather than re-fetching
+    ## polygons supplied on the simList: use them rather than re-fetching, projected and cropped to
+    ## the grid as the download is. rasterize() counts no cell of a polygon in another CRS, silently.
     sim$firePolys |>
       tidyterra::bind_spat_rows() |>
-      tidyterra::mutate(YEAR = as.integer(YEAR))
+      tidyterra::mutate(YEAR = as.integer(YEAR)) |>
+      terra::project(terra::crs(flammableMap)) |>
+      terra::crop(terra::ext(flammableMap))
   } else {
     ## Observed fire perimeters: NBAC (National Burned Area Composite -- satellite-derived,
     ## 1972-present, the preferred source) supplemented with NFDB polygons ONLY for the years

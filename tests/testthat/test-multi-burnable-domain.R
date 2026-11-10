@@ -151,6 +151,18 @@ test_that("supplied firePolys replace the download, on the burnable cells, witho
   expect_false(any(grepl("NBAC perimeters", maps$messages)))
 })
 
+test_that("supplied firePolys in another CRS give the same historic map", {
+  r <- domainGrid()
+  ## lon/lat: without projecting, rasterize() on this grid counts no cell, silently
+  supplied <- list(terra::project(cellPolys(r, c(1, 5, 7), c(1990, 1995, 2000)), "EPSG:4326"))
+  maps <- runMultiDomain(
+    file.path(testPaths$outputPath, "multi-supplied-crs"),
+    list(studyArea = domainStudyArea(), fireReturnInterval = domainFRI(), firePolys = supplied)
+  )
+  expect_equal(maps$historic[burnable], c(1, 0, 1, 0) / 6, tolerance = 1e-6)
+  expect_match(maps$messages, "historic record 1990-1995 \\(6 years\\)", all = FALSE)
+})
+
 test_that("the observed fire count is of fires on the burnable cells", {
   maps <- runMultiDomain(
     file.path(testPaths$outputPath, "multi-nFires"),
