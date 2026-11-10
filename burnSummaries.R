@@ -730,10 +730,10 @@ observedFireRegime <- function(firePolys, historic, burnableMap, recordYears) {
 }
 
 ## Fire per block of `blockYears` years per replicate: number of fires and area burned (ha). A block with
-## no fire is 0, not missing. `block` = the year before the block's first: a block covers the fires of the years after `block` up to
-## `block + blockYears`, as `regimePeriod` does (fires are stamped years `simTimes[1] + 1` to `simTimes[2]`).
-## Blocks start at `simTimes[1]`, and a last
-## block shorter than `blockYears` is left out.
+## no fire is 0, not missing. `block` = the year before the block's first: a block covers the fires of the
+## years after `block` up to `block + blockYears`, as `regimePeriod` does (fires are stamped years
+## `simTimes[1] + 1` to `simTimes[2]`). Blocks start at `simTimes[1]`, and a last block shorter than
+## `blockYears` is left out.
 fireBlockTable <- function(fireSizes, reps, simTimes, blockYears, pixelHa) {
   starts <- seq(simTimes[1], simTimes[2] - blockYears, by = blockYears)
   yr <- as.numeric(fireSizes$year)
