@@ -89,7 +89,8 @@ runSingleRep <- function(out, rep, fires, mods, end = 4) {
 
 ## Multi mode over the replicates under `out`. The national fire records are replaced by one
 ## polygon over the grid, so nothing is downloaded.
-runMulti <- function(out, reps, end = 4, historicYears = c(NA_integer_, NA_integer_)) {
+runMulti <- function(out, reps, end = 4, historicYears = c(NA_integer_, NA_integer_),
+                     regimePeriod = c(NA_integer_, NA_integer_)) {
   polys <- terra::as.polygons(terra::ext(testGrid()), crs = "EPSG:3400")
   polys$YEAR <- 2000L
   testthat::local_mocked_bindings(
@@ -101,10 +102,10 @@ runMulti <- function(out, reps, end = 4, historicYears = c(NA_integer_, NA_integ
     times = list(start = 0, end = end),
     params = list(burnSummaries = list(
       mode = "multi", reps = reps, simTimes = c(0, end), summaryPeriod = c(2L, 4L),
-      summaryInterval = 1L, .studyAreaName = "test", .plots = "png", historicYears = historicYears
+      summaryInterval = 1L, .studyAreaName = "test", .plots = "png", historicYears = historicYears,
+      regimePeriod = regimePeriod
     )),
     modules = "burnSummaries",
-    objects = list(reportingPolygons = polys),
     paths = utils::modifyList(testPaths, list(outputPath = out))
   )
 }
@@ -159,4 +160,14 @@ test_that("multi mode writes the fire regime and fire per block, observed years 
   fb <- data.table::fread(file.path(out, "burnSummaries_fireBlocks.csv"))
   expect_identical(nrow(fb), 2L * 4L) ## 2 reps x 4 one-year blocks
   expect_true("fire_per_block.png" %in% basename(list.files(out, "\\.png$", recursive = TRUE)))
+})
+
+test_that("regimePeriod limits the simulated regime rows to those years", {
+  mods <- writeLandMineStandIn(withr::local_tempdir())
+  out <- file.path(testPaths$outputPath, "multi-regimePeriod")
+  runSingleRep(file.path(out, "rep01"), rep = 1L, fires = TRUE, mods = mods)
+  sim <- runMulti(out, reps = 1L, historicYears = c(1991L, 2000L), regimePeriod = c(2L, 4L))
+  fr <- data.table::fread(file.path(out, "burnSummaries_fireRegime.csv"))
+  expect_identical(fr$nFires[1], 2L) ## one fire each year 1-4; years 3 and 4 are in (2, 4]
+  expect_identical(c(fr$firstYear[1], fr$lastYear[1]), c(2L, 4L))
 })

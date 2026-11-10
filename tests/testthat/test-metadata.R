@@ -55,7 +55,7 @@ test_that("parameters are the expected names", {
     c(
       ".plotInitialTime", ".plotInterval", ".plots", ".saveInitialTime",
       ".saveInterval", ".seed", ".studyAreaName", ".useCache", "dataYear",
-      "fireTimestep", "historicYears", "mode", "nbacStartYear", "reps", "simOutputPath", "simTimes", "summaryInterval",
+      "fireTimestep", "historicYears", "mode", "nbacStartYear", "regimePeriod", "reps", "simOutputPath", "simTimes", "summaryInterval",
       "summaryPeriod"
 )
   )

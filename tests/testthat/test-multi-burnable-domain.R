@@ -57,7 +57,7 @@ runMultiDomain <- function(out, objects = list(), params = list()) {
       summaryInterval = 1L, .studyAreaName = "test", .plots = NA_character_
     ), params)),
     modules = "burnSummaries",
-    objects = c(list(reportingPolygons = fires$nbac), objects),
+    objects = objects,
     paths = utils::modifyList(testPaths, list(outputPath = out))
   ))
   readMap <- function(f) {
@@ -149,4 +149,13 @@ test_that("supplied firePolys replace the download, on the burnable cells, witho
   expect_match(maps$messages, "historic record 1990-1995 \\(6 years\\)", all = FALSE)
   ## nothing was fetched
   expect_false(any(grepl("NBAC perimeters", maps$messages)))
+})
+
+test_that("the observed fire count is of fires on the burnable cells", {
+  maps <- runMultiDomain(
+    file.path(testPaths$outputPath, "multi-nFires"),
+    list(studyArea = domainStudyArea(), fireReturnInterval = domainFRI())
+  )
+  ## 8 recorded fires; NBAC 1980, 1990, 2000 and NFDB 1961 are on burnable cells
+  expect_identical(maps$observed$nFires, 4L)
 })
