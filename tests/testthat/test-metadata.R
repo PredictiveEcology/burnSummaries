@@ -70,3 +70,10 @@ test_that("loadOrder runs after the renamed burn module", {
   expect_true("fireSense_burn" %in% lo$after)
   expect_false("fireSense" %in% lo$after)
 })
+
+test_that("`simOutputPath` is not part of the module's cache keys", {
+  ## no code reads it: it only names a folder
+  p <- SpaDES.core::moduleMetadata(module = moduleName, path = modulePath)$parameters
+  expect_false(p$cacheKey[p$paramName == "simOutputPath"])
+  expect_true(all(p$cacheKey[p$paramName != "simOutputPath"]))
+})

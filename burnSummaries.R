@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.1.0.9004"),
+  version = list(burnSummaries = "1.1.0.9005"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -52,7 +52,8 @@ defineModule(sim, list(
                     paste("in single mode, should be length 1 indicating the replicate id;",
                           "in multi mode, a vector of replicate IDs.")),
     defineParameter("simOutputPath", "character", outputPath(sim), NA, NA,
-                    "Directory specifying the location of the simulation outputs."),
+                    "Directory specifying the location of the simulation outputs.",
+                    cacheKey = FALSE), ## no code reads it; a path differs between machines
     defineParameter("simTimes", "numeric", c(NA, NA), NA, NA,
                     "Simulation start and end times when running in 'multi' mode."),
     defineParameter("summaryInterval", "integer", 100L, NA, NA,
