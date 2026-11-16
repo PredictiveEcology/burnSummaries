@@ -1,5 +1,7 @@
 # burnSummaries (development version)
 
+- `simOutputPath` is no longer part of the module's event cache keys (`defineParameter(cacheKey = FALSE)`; SpaDES.core >= 3.2.1.9057). No code reads it; its default, `outputPath(sim)`, differs between machines. The event cache keys of this module change once.
+
 ## Fire regime window, observed fire count, no `reportingPolygons`
 
 * New parameter `regimePeriod` (multi mode, default `c(NA, NA)`): the first and last simulation year the simulated
