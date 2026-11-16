@@ -1,7 +1,7 @@
 ---
 title: "burnSummaries Manual"
 subtitle: "v.1.1.0.9004"
-date: "Last updated: 2026-11-10"
+date: "Last updated: 2026-11-16"
 output:
   bookdown::html_document2:
     toc: true
@@ -32,7 +32,7 @@ always_allow_html: true
 
 
 
-[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries73e026502bae5f958a246d689df0e2ecc6a0c8be)
+[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries5cb98215a306f6f8dda3dafb2fa5c52748a19b85)
 
 [![Issues-badge](figures/issuesBadge.png)](https://github.com/PredictiveEcology/burnSummaries/issues)
 
@@ -227,7 +227,7 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> Directory specifying the location of the simulation outputs. </td>
-   <td style="text-align:left;"> TRUE </td>
+   <td style="text-align:left;"> FALSE </td>
   </tr>
   <tr>
    <td style="text-align:left;"> simTimes </td>
