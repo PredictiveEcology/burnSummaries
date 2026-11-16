@@ -48,3 +48,23 @@ test_that("save_single runs once per time, with the summary period over the whol
   expect_false(anyDuplicated(saves) > 0L)
   expect_identical(sort(saves), c(0, 5, 10))
 })
+
+test_that("simOutputPath is not in the init event's cache key: a run that differs only in it is a cache hit", {
+  ## a cache built on one machine is then a hit on another, where the folder differs
+  paths <- testPaths
+  paths$cachePath <- withr::local_tempdir()
+  r <- terra::rast(nrows = 4, ncols = 4, vals = 1L)
+  cachedInit <- function(simOutputPath) {
+    sim <- suppressMessages(SpaDES.core::simInit(
+      times = list(start = 0, end = 10), modules = moduleName, paths = paths,
+      params = stats::setNames(list(list(mode = "single", summaryPeriod = c(0L, 10L), .plots = NA,
+                                         .useCache = "init", simOutputPath = simOutputPath)), moduleName),
+      objects = list(burnMap = r, flammableMap = r, rstCurrentBurn = r, rstTimeSinceFire = r)))
+    suppressMessages(SpaDES.core::spades(sim, events = stats::setNames(list("init"), moduleName)))
+  }
+  nCached <- function() length(unique(reproducible::showCache(paths$cachePath, verbose = -2)$cacheId))
+  cachedInit(file.path(tempdir(), "machineA"))
+  expect_identical(nCached(), 1L)                                        # the init event, cached
+  cachedInit(file.path(tempdir(), "machineB"))
+  expect_identical(nCached(), 1L)                                        # a hit: nothing new was cached
+})
