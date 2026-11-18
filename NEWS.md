@@ -1,5 +1,12 @@
 # burnSummaries (development version)
 
+## Time since fire is reset in the year a cell burns (`1.1.0.9005`)
+
+* `update_tsf` (single mode) now runs after the fire model's burn each year (priority 8), so a cell reads 0 in
+  the year it burns, as the fire model's own count does (e.g. scfmSpread's `timeSinceFire`). At the default
+  priority (5) it ran before fireSense_burn's burn (5.13) and scfmSpread's (7.5), and reset a burned cell a
+  year late; with LandMine (Burn at 2.5) nothing changes.
+
 ## Fire regime window, observed fire count, no `reportingPolygons`
 
 * New parameter `regimePeriod` (multi mode, default `c(NA, NA)`): the first and last simulation year the simulated
