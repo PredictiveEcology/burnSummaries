@@ -34,12 +34,71 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE, warning = FALSE,
                       cache = TRUE, cache.rebuild = FALSE, results = "hold", dpi = 300)
 
 library(SpaDES.core)
+library(git2r)
 library(dplyr)
 library(data.table)
 library(kableExtra)
 library(pander)
 library(SpaDES.docs)
 
+```
+
+```{r badgeFigs-burnSummaries, include = FALSE, eval = TRUE, cache = FALSE}
+dir.create("figures", showWarnings = FALSE)
+
+if (!file.exists("figures/markdownBadge.png")) {
+  download.file(url = "https://img.shields.io/badge/Made%20with-Markdown-1f425f.png",
+                destfile = "figures/markdownBadge.png",
+                mode = "wb")
+}
+if (!file.exists("figures/issuesBadge.png")) {
+  download.file(url = "https://img.shields.io/badge/Get%20help-Report%20issues-%3CCOLOR%3E.png",
+                destfile = "figures/issuesBadge.png",
+                mode = "wb")
+}
+
+modversion <- paste(unlist(moduleMetadata(module = 'burnSummaries', path = '..')$version), collapse = ".")
+download.file(url = paste0("https://img.shields.io/badge/burnSummaries-", paste0("v.%20", modversion),
+                           "-%3CCOLOR%3E.png"),
+              destfile = "figures/moduleVersionBadge.png",
+              mode = "wb")
+```
+
+``` {r moduleBadge-burnSummaries, echo = FALSE, eval = TRUE, cache = FALSE, results = "asis"}
+## try to automatically get the commit URL and the path to the badge image
+modulePath <- if (grepl("burnSummaries$", normPath("."))) {
+    normPath(".")
+  } else {
+    modulePath <- grep("burnSummaries$", 
+                       list.files(pattern = "burnSummaries", recursive = TRUE, include.dirs = TRUE),
+                       value = TRUE)
+    modulePath <- grep("docs/", modulePath, value = TRUE, invert = TRUE)  ## exclude "copied" modules dirs for bookdown
+    normPath(modulePath)
+  }
+
+badgeURL <- if (!is_detached(modulePath)) {
+  commitSHA <- sha(revparse_single(modulePath, "HEAD"))
+  repo <- sub("[.]git$", "/commit/",
+              branch_remote_url(branch_get_upstream(repository_head(modulePath))))
+  paste0(repo, commitSHA)
+} else {
+  ## if detached point to the first remote
+  remote_url(modulePath)[1]
+}
+badgeURL <- sub(".*github[.]com:", "https://github.com/", badgeURL)
+
+badgePath <- SpaDES.docs::stageFigure("figures/moduleVersionBadge.png")
+
+## make string of markdown code to be executed as-is
+cat(paste0("[![module-version-Badge](", badgePath, ")](", badgeURL, ")"))
+```
+
+```{r issuesBadge-burnSummaries, echo = FALSE, eval = TRUE, cache = FALSE, results = "asis"}
+badgeURL <- "https://github.com/PredictiveEcology/burnSummaries/issues"
+badgePath <- SpaDES.docs::stageFigure("figures/issuesBadge.png")
+
+## make string of markdown code to be executed as-is
+cat(paste0("[![Issues-badge](", badgePath, ")](", badgeURL,")"))
 ```
 
 #### Authors:
