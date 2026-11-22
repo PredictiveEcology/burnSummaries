@@ -102,7 +102,7 @@ runMulti <- function(out, reps, end = 4, historicYears = c(NA_integer_, NA_integ
     times = list(start = 0, end = end),
     params = list(burnSummaries = list(
       mode = "multi", reps = reps, simTimes = c(0, end), summaryPeriod = c(2L, 4L),
-      summaryInterval = 1L, .studyAreaName = "test", .plots = "png", historicYears = historicYears,
+      summaryInterval = 1L, minCellHa = 1, .studyAreaName = "test", .plots = "png", historicYears = historicYears,
       regimePeriod = regimePeriod
     )),
     modules = "burnSummaries",

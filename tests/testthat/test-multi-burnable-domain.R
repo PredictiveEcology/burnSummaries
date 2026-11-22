@@ -54,7 +54,7 @@ runMultiDomain <- function(out, objects = list(), params = list()) {
     times = list(start = 0, end = 4),
     params = list(burnSummaries = utils::modifyList(list(
       mode = "multi", reps = 1L, simTimes = c(0, 4), summaryPeriod = c(2L, 4L),
-      summaryInterval = 1L, .studyAreaName = "test", .plots = NA_character_
+      summaryInterval = 1L, minCellHa = 1, .studyAreaName = "test", .plots = NA_character_
     ), params)),
     modules = "burnSummaries",
     objects = objects,

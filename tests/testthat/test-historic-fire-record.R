@@ -85,7 +85,7 @@ test_that("the historic burn map takes NFDB only before 1972 and drops undated p
     times = list(start = 0, end = 4),
     params = list(burnSummaries = list(
       mode = "multi", reps = 1L, simTimes = c(0, 4), summaryPeriod = c(2L, 4L),
-      summaryInterval = 1L, .studyAreaName = "test", .plots = NA_character_
+      summaryInterval = 1L, minCellHa = 1, .studyAreaName = "test", .plots = NA_character_
     )),
     modules = "burnSummaries",
     paths = utils::modifyList(testPaths, list(outputPath = out))

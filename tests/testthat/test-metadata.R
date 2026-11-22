@@ -54,8 +54,8 @@ test_that("parameters are the expected names", {
     sort(md$parameters$paramName),
     c(
       ".plotInitialTime", ".plotInterval", ".plots", ".saveInitialTime",
-      ".saveInterval", ".seed", ".studyAreaName", ".useCache", "dataYear",
-      "fireTimestep", "historicYears", "mode", "nbacStartYear", "regimePeriod", "reps", "simOutputPath", "simTimes", "summaryInterval",
+      ".saveInterval", ".seed", ".studyAreaName", ".useCache", "dataYear", "fireCauses",
+      "fireTimestep", "historicYears", "minCellHa", "mode", "nbacStartYear", "regimePeriod", "reps", "simOutputPath", "simTimes", "summaryInterval",
       "summaryPeriod"
 )
   )
