@@ -23,9 +23,9 @@ defineModule(sim, list(
   ## archives R's internal unzip cannot -- so keep it available.
   reqdPkgs = list("archive", "data.table", "dplyr", "httr2", "PredictiveEcology/LandR@development",
                   "FOR-CAST/fireregimetools@main (>= 0.1.0.9008)",
-                  ## fireSenseFireCauses, fireCauseCodes(), polyCauseColTxt: the causes the fits model, and the
+                  ## fireSenseFireCauses, fireCauseCodes(), polyCauseColTxt (9156): the causes the fits model, and the
                   ## NBAC / NFDB values in each
-                  "PredictiveEcology/fireSenseUtils@development (>= 0.2.3.9135)",
+                  "PredictiveEcology/fireSenseUtils@development (>= 0.2.3.9156)",
                   "ggplot2", "ggspatial", "googledrive", "patchwork",
                   "reproducible", "sf",
                   ## dirnamesFromSet() (bare-number replicate folders), resolveSimYears(), padYears()
@@ -620,7 +620,7 @@ historicRecordYears <- function(firePolys, flammableMap, burnable, historicYears
 ## `fireCauses`, by the same NBAC `FIRECAUS` / NFDB `CAUSE` values the fits use (fireSenseUtils::fireCauseCodes()),
 ## and, for NBAC, not a prescribed burn (`PRESCRIBED`). The simulated fires are only those causes, so counting
 ## every perimeter in the observed record overstated the observed burn rate where prescribed or human fires are
-## common. A record without the column is not cut on it, and a message says so. Messages say how many were dropped.
+## common. A record without the cause column is not cut on it, with a warning (the fit side errors). Messages say how many were dropped.
 modelledFires <- function(polys, fireCauses, source = c("nbac", "nfdb")) {
   source <- match.arg(source)
   n <- nrow(polys)
@@ -629,7 +629,7 @@ modelledFires <- function(polys, fireCauses, source = c("nbac", "nfdb")) {
   byCause <- if (causeCol %in% names(polys)) {
     polys[[causeCol]][, 1] %in% fireSenseUtils::fireCauseCodes(fireCauses, source)
   } else {
-    message("  no `", causeCol, "` column in the ", toupper(source), " polygons: not cut by cause")
+    warning("no `", causeCol, "` column in the ", toupper(source), " polygons: not cut by cause", call. = FALSE)
     rep(TRUE, n)
   }
   prescribed <- if (source == "nbac" && "PRESCRIBED" %in% names(polys)) {

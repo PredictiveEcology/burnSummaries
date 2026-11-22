@@ -1,4 +1,4 @@
-## 4 x 4 grid of 240 m cells (EPSG:3400 units are metres); minCellHa 100 -> factor 5
+## 10 x 10 grid of 240 m cells (EPSG:3400 units are metres); minCellHa 100 -> factor 5
 fineGrid <- function(n = 10, vals = 1) {
   terra::rast(nrows = n, ncols = n, vals = vals, crs = "EPSG:3400",
               xmin = 0, xmax = n * 240, ymin = 0, ymax = n * 240)
@@ -113,4 +113,11 @@ test_that("multi mode writes both maps at the coarse cell and drops non-modelled
   ## only year 2000 (two polygons, one cell) survives: 1 of 25 cells, over 10 years
   expect_equal(terra::values(h, mat = FALSE)[1], (1 / 25) / 10, tolerance = 1e-6)
   expect_equal(terra::values(s, mat = FALSE), rep(0, 4))
+})
+
+test_that("a record with no cause column warns that it is not cut by cause", {
+  p <- polyOf(fineGrid(), 1:2, 2000L)
+  p$FIRECAUS <- NULL
+  expect_warning(kept <- suppressMessages(modelledFires(p, "natural", "nbac")), "not cut by cause")
+  expect_equal(nrow(kept), 2)
 })
