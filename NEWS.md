@@ -1,8 +1,5 @@
 # burnSummaries (development version)
 
-- The observed fire selected for the burn maps and the fire regime table is `fireSenseUtils::modelledFires()`, the function
-  the fits and scores use (the modelled causes, no prescribed burn), replacing this module's copy. A record with no cause
-  column now stops, as in the fits, instead of warning.
 - The two mean annual burn maps (`meanAnnualCumulBurnMap.tif`, `meanAnnualCumulBurnMapHistoric.tif`) are now on a
   coarser grid: the flammable grid aggregated by the smallest whole factor whose cell is at least the new parameter
   `minCellHa` (default 100 ha; 240 m cells become 1.2 km, 144 ha), as fire perimeters are only meaningful at about
@@ -10,9 +7,11 @@
   A coarse cell with no burnable cell is `NA`. The observed map counts each year once per cell, however many
   polygons overlap there. The observed row of `burnSummaries_fireRegime.csv` takes its area from that map.
 - The observed record keeps only fires of the new parameter `fireCauses` (default `fireSenseUtils::fireSenseFireCauses`,
-  mapped to NBAC `FIRECAUS` / NFDB `CAUSE` by `fireSenseUtils::fireCauseCodes()`) and drops NBAC prescribed burns
-  (`PRESCRIBED`), the fires the simulation does not model. A message says how many were dropped. This also changes the
-  fire count and largest fire of the observed regime row. Needs fireSenseUtils >= 0.2.3.9156.
+  mapped to NBAC `FIRECAUS` / NFDB `CAUSE` by `fireSenseUtils::fireCauseCodes()`) and drops prescribed burns, the fires
+  the simulation does not model. The selection is `fireSenseUtils::modelledFires()`, the function the fits and scores
+  use (NBAC `PRESCRIBED`; NFDB `PRESCRIBED`, `FIRE_TYPE`, `H-PB`). A record with no cause column stops, as in the fits.
+  This also changes the fire count and largest fire of the observed regime row. Needs fireSenseUtils >= 0.2.3.9190, a
+  placeholder for the version after fireSenseUtils#261 merges; it is set to the real version after merge.
 
 - `simOutputPath` is no longer part of the module's event cache keys (`defineParameter(cacheKey = FALSE)`; SpaDES.core >= 3.2.1.9057). No code reads it; its default, `outputPath(sim)`, differs between machines. The event cache keys of this module change once.
 
