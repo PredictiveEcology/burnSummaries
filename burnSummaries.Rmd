@@ -76,16 +76,14 @@ modulePath <- if (grepl("burnSummaries$", normPath("."))) {
     normPath(modulePath)
   }
 
-badgeURL <- if (!is_detached(modulePath)) {
-  commitSHA <- sha(revparse_single(modulePath, "HEAD"))
-  repo <- sub("[.]git$", "/commit/",
-              branch_remote_url(branch_get_upstream(repository_head(modulePath))))
-  paste0(repo, commitSHA)
-} else {
-  ## if detached point to the first remote
-  remote_url(modulePath)[1]
-}
-badgeURL <- sub(".*github[.]com:", "https://github.com/", badgeURL)
+## link the badge to this commit on GitHub, whatever form the remote URL takes
+## (https with or without .git, git@github.com:, ssh://git@github.com/);
+## detached or without an upstream, use the first remote
+upstream <- if (!is_detached(modulePath)) branch_get_upstream(repository_head(modulePath))
+remoteURL <- if (is.null(upstream)) remote_url(modulePath)[1] else branch_remote_url(upstream)
+repoURL <- sub("^(ssh://)?git@github[.]com[:/]", "https://github.com/", remoteURL)
+repoURL <- sub("^https://[^/@]*@", "https://", sub("[.]git$", "", repoURL)) ## no credentials
+badgeURL <- paste0(repoURL, "/commit/", sha(revparse_single(modulePath, "HEAD")))
 
 badgePath <- SpaDES.docs::stageFigure("figures/moduleVersionBadge.png")
 
