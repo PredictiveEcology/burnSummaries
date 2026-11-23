@@ -11,6 +11,8 @@ yearPolys <- function(years) {
   )
   v$YEAR <- as.integer(years)
   v$SIZE_HA <- rep(1, length(years))
+  v$FIRECAUS <- "Natural" # the loaders keep each source's cause column (NBAC FIRECAUS, NFDB CAUSE)
+  v$CAUSE <- "N"
   v
 }
 

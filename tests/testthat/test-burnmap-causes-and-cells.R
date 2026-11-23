@@ -25,13 +25,10 @@ test_that("prescribed burns and causes outside fireCauses are dropped, with a me
   r <- fineGrid()
   p <- polyOf(r, 1:4, 2000L, cause = c("Natural", "Undetermined", "Human", "Natural"),
               prescribed = c("false", "false", "false", "true"))
-  msgs <- testthat::capture_messages(
-    kept <- modelledFires(p, fireSenseUtils::fireSenseFireCauses, "nbac")
-  )
+  kept <- fireSenseUtils::modelledFires(p, fireSenseUtils::fireSenseFireCauses, "nbac")
   expect_equal(nrow(kept), 2) ## natural and undetermined; the human fire and the prescribed one go
-  expect_match(msgs, "2 .*prescribed|prescribed.*1|dropped", all = FALSE)
   ## the human cause is kept when the fits model it
-  kept2 <- suppressMessages(modelledFires(p, c("natural", "unknown", "human"), "nbac"))
+  kept2 <- fireSenseUtils::modelledFires(p, c("natural", "unknown", "human"), "nbac")
   expect_equal(nrow(kept2), 3) ## still no prescribed
 })
 
@@ -39,10 +36,10 @@ test_that("historicFirePolys keeps only modelled-cause, non-prescribed fires of 
   r <- fineGrid()
   nbac <- polyOf(r, 1:3, 1990L, cause = c("Natural", "Human", "Undetermined"),
                  prescribed = c("false", "false", "true"))
-  nfdb <- polyOf(r, 4:5, 1960L)
-  nfdb$CAUSE <- c("N", "H")
+  nfdb <- polyOf(r, 4:6, 1960L, prescribed = c(NA, NA, "yes")) ## NFDB polygons: PRESCRIBED "yes"
+  nfdb$CAUSE <- c("N", "H", "N")
   fires <- suppressMessages(historicFirePolys(nbac, nfdb, 1972L, fireSenseUtils::fireSenseFireCauses))
-  expect_identical(sort(fires$YEAR), c(1960L, 1990L)) ## NBAC cell 1, NFDB cell 4
+  expect_identical(sort(fires$YEAR), c(1960L, 1990L)) ## NBAC cell 1, NFDB cell 4; the prescribed NFDB natural fire (cell 6) goes
 })
 
 test_that("the historic map is the share of burnable area burned per year, two fires on one patch count once", {
@@ -91,6 +88,7 @@ test_that("multi mode writes both maps at the coarse cell and drops non-modelled
                  cause = c("Natural", "Undetermined", "Natural", "Human"),
                  prescribed = c("false", "false", "false", "false"))
   nbac$PRESCRIBED[3] <- "true"
+  nbac$CAUSE <- "N"
   nfdb <- nbac[0, ]
   testthat::local_mocked_bindings(
     fetch_nbac_polys = function(...) nbac,
@@ -115,9 +113,8 @@ test_that("multi mode writes both maps at the coarse cell and drops non-modelled
   expect_equal(terra::values(s, mat = FALSE), rep(0, 4))
 })
 
-test_that("a record with no cause column warns that it is not cut by cause", {
+test_that("a record with no cause column is an error, as in the fit", {
   p <- polyOf(fineGrid(), 1:2, 2000L)
   p$FIRECAUS <- NULL
-  expect_warning(kept <- suppressMessages(modelledFires(p, "natural", "nbac")), "not cut by cause")
-  expect_equal(nrow(kept), 2)
+  expect_error(historicFirePolys(p, p[integer(0), ], 1972L, "natural"), "FIRECAUS")
 })

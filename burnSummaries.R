@@ -24,8 +24,8 @@ defineModule(sim, list(
   reqdPkgs = list("archive", "data.table", "dplyr", "httr2", "PredictiveEcology/LandR@development",
                   "FOR-CAST/fireregimetools@main (>= 0.1.0.9008)",
                   ## fireSenseFireCauses, fireCauseCodes(), polyCauseColTxt (9156): the causes the fits model, and the
-                  ## NBAC / NFDB values in each
-                  "PredictiveEcology/fireSenseUtils@development (>= 0.2.3.9156)",
+                  ## NBAC / NFDB values in each; modelledFires() (9190, set to the real version after fireSenseUtils#261 merges)
+                  "PredictiveEcology/fireSenseUtils@development (>= 0.2.3.9190)",
                   "ggplot2", "ggspatial", "googledrive", "patchwork",
                   "reproducible", "sf",
                   ## dirnamesFromSet() (bare-number replicate folders), resolveSimYears(), padYears()
@@ -416,7 +416,7 @@ InitMulti <- function(sim) {
       tidyterra::mutate(YEAR = as.integer(YEAR)) |>
       terra::project(terra::crs(flammableMap)) |>
       terra::crop(terra::ext(flammableMap)) |>
-      modelledFires(P(sim)$fireCauses, "nbac")
+      fireSenseUtils::modelledFires(P(sim)$fireCauses, "nbac")
   } else {
     ## Observed fire perimeters: NBAC (National Burned Area Composite -- satellite-derived,
     ## 1972-present, the preferred source) supplemented with NFDB polygons ONLY for the years
@@ -504,11 +504,12 @@ repFiles <- function(repDirs, fname, files = NULL) {
 ## NFDB polygons for the years before it. The boundary is a fixed year, not the years NBAC has inside
 ## the study area: a year from 1972 on with no NBAC fire here is a year in which NBAC mapped none, and
 ## filling it from the NFDB would mix the two products. NFDB polygons with no year (`YEAR` -9999, 0
-## or missing) are dropped. Only the fires the fire model is fitted to stay: modelledFires().
+## or missing) are dropped. Only the fires the fire model is fitted to stay: `fireSenseUtils::modelledFires()` (the causes of
+## `fireCauses`, and no prescribed burn).
 historicFirePolys <- function(nbac, nfdb, nbacStartYear, fireCauses = fireSenseUtils::fireSenseFireCauses) {
-  nbac <- modelledFires(nbac[which(nbac$YEAR >= nbacStartYear), ], fireCauses, "nbac")[, "YEAR"]
+  nbac <- fireSenseUtils::modelledFires(nbac[which(nbac$YEAR >= nbacStartYear), ], fireCauses, "nbac")[, "YEAR"]
   nDated <- sum(nfdb$YEAR > 0, na.rm = TRUE)
-  backfill <- modelledFires(nfdb[which(nfdb$YEAR > 0 & nfdb$YEAR < nbacStartYear), ], fireCauses, "nfdb")[, "YEAR"]
+  backfill <- fireSenseUtils::modelledFires(nfdb[which(nfdb$YEAR > 0 & nfdb$YEAR < nbacStartYear), ], fireCauses, "nfdb")[, "YEAR"]
 
   years <- sort(unique(backfill$YEAR))
   message(sprintf(
@@ -614,33 +615,6 @@ historicRecordYears <- function(firePolys, flammableMap, burnable, historicYears
     message("  historic record: no fire in the burnable cells; the historic burn map is 0 there")
   }
   years
-}
-
-## The fires of `polys` that the fire model is fitted to (multi mode): those whose cause is in the cause groups
-## `fireCauses`, by the same NBAC `FIRECAUS` / NFDB `CAUSE` values the fits use (fireSenseUtils::fireCauseCodes()),
-## and, for NBAC, not a prescribed burn (`PRESCRIBED`). The simulated fires are only those causes, so counting
-## every perimeter in the observed record overstated the observed burn rate where prescribed or human fires are
-## common. A record without the cause column is not cut on it, with a warning (the fit side errors). Messages say how many were dropped.
-modelledFires <- function(polys, fireCauses, source = c("nbac", "nfdb")) {
-  source <- match.arg(source)
-  n <- nrow(polys)
-  if (n == 0L) return(polys)
-  causeCol <- if (source == "nbac") fireSenseUtils::polyCauseColTxt else "CAUSE"
-  byCause <- if (causeCol %in% names(polys)) {
-    polys[[causeCol]][, 1] %in% fireSenseUtils::fireCauseCodes(fireCauses, source)
-  } else {
-    warning("no `", causeCol, "` column in the ", toupper(source), " polygons: not cut by cause", call. = FALSE)
-    rep(TRUE, n)
-  }
-  prescribed <- if (source == "nbac" && "PRESCRIBED" %in% names(polys)) {
-    tolower(as.character(polys$PRESCRIBED)) %in% c("true", "t", "y", "yes", "1")
-  } else {
-    rep(FALSE, n)
-  }
-  message(sprintf("  %s polygons dropped: %d prescribed, %d of a cause not in fireCauses (%s); %d kept",
-                  toupper(source), sum(prescribed), sum(!byCause & !prescribed),
-                  paste(fireCauses, collapse = ", "), sum(byCause & !prescribed)))
-  polys[which(byCause & !prescribed), ]
 }
 
 ## The smallest whole factor by which a grid of cell size `res` (m) is aggregated to cells of at least `minCellHa`.

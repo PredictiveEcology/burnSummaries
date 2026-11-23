@@ -1,5 +1,8 @@
 # burnSummaries (development version)
 
+- The observed fire selected for the burn maps and the fire regime table is `fireSenseUtils::modelledFires()`, the function
+  the fits and scores use (the modelled causes, no prescribed burn), replacing this module's copy. A record with no cause
+  column now stops, as in the fits, instead of warning.
 - The two mean annual burn maps (`meanAnnualCumulBurnMap.tif`, `meanAnnualCumulBurnMapHistoric.tif`) are now on a
   coarser grid: the flammable grid aggregated by the smallest whole factor whose cell is at least the new parameter
   `minCellHa` (default 100 ha; 240 m cells become 1.2 km, 144 ha), as fire perimeters are only meaningful at about

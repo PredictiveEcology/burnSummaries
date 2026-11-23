@@ -93,6 +93,8 @@ runMulti <- function(out, reps, end = 4, historicYears = c(NA_integer_, NA_integ
                      regimePeriod = c(NA_integer_, NA_integer_)) {
   polys <- terra::as.polygons(terra::ext(testGrid()), crs = "EPSG:3400")
   polys$YEAR <- 2000L
+  polys$FIRECAUS <- "Natural" # the loaders keep each source's cause column (NBAC FIRECAUS, NFDB CAUSE)
+  polys$CAUSE <- "N"
   testthat::local_mocked_bindings(
     fetch_nbac_polys = function(...) polys,
     fetch_nfdb_polys = function(...) polys,
