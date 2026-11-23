@@ -1,5 +1,10 @@
 # burnSummaries (development version)
 
+## Documentation
+
+* The README shows the module's events, the objects each reads and writes, and a figure per event,
+  generated from the code (needs SpaDES.core 3.2.1.9068 or later; older versions leave them out).
+
 ## Time since fire is reset in the year a cell burns (`1.1.0.9005`)
 
 * `update_tsf` (single mode) now runs after the fire model's burn each year (priority 8), so a cell reads 0 in
