@@ -1,7 +1,7 @@
 ---
 title: "burnSummaries Manual"
 subtitle: "v.1.1.0.9005"
-date: "Last updated: 2026-11-23"
+date: "Last updated: 2026-11-24"
 output:
   bookdown::html_document2:
     toc: true
@@ -32,7 +32,7 @@ always_allow_html: true
 
 
 
-[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries/commit/5b954a4621081700e4c22fa3800062e240765529)
+[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries/commit/663135239b6c3f4f925d44bdd781204591d7803f)
 
 [![Issues-badge](figures/issuesBadge.png)](https://github.com/PredictiveEcology/burnSummaries/issues)
 
@@ -364,6 +364,116 @@ In multi mode:
 - `init` reads the replicates' burn and flammability maps, fetches the observed fire record unless `firePolys` is supplied, and makes and saves the simulated and observed mean annual burn maps.
 - `summary` combines the fire sizes of all replicates and writes the fire-regime and fire-per-block tables.
 - `plot` draws the figures.
+
+
+
+<div class="figure">
+<img src="figures/burnSummaries_eventFlow.png" alt="(ref:burnSummaries) events, as read from the module code with its default parameters." width="100%" />
+<p class="caption">(\#fig:eventFlow-burnSummaries)(ref:burnSummaries) events, as read from the module code with its default parameters.</p>
+</div>
+
+Table \@ref(tab:eventObjects-burnSummaries) lists, for each object, the code that writes it and the code that only reads it.
+
+<table class="table" style="width: auto !important; border-bottom: 0;">
+<caption>(\#tab:eventObjects-burnSummaries)Where each object of (ref:burnSummaries) is written and read, in run order.</caption>
+ <thead>
+  <tr>
+   <th style="text-align:left;"> Object </th>
+   <th style="text-align:left;"> Written by </th>
+   <th style="text-align:left;"> Read by </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr grouplength="7"><td colspan="3" style="border-bottom: 1px solid;"><strong>Inputs</strong></td></tr>
+<tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> flammableMap </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> init: InitSingle() </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> nonForest_timeSinceDisturbance </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> init: InitSingle() </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> rstCurrentBurn </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> init: InitSingle() </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> firePolys </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> init: InitMulti() </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> fireReturnInterval </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> init: InitMulti() </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> outputsDF </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> init: InitMulti() </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> studyArea </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> init: InitMulti() </td>
+  </tr>
+  <tr grouplength="2"><td colspan="3" style="border-bottom: 1px solid;"><strong>Inputs the module also updates</strong></td></tr>
+<tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> rstTimeSinceFire </td>
+   <td style="text-align:left;"> .inputObjects (default), init: InitSingle() </td>
+   <td style="text-align:left;">  </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> fireSizes </td>
+   <td style="text-align:left;"> summary (multi) </td>
+   <td style="text-align:left;"> plot (multi) </td>
+  </tr>
+</tbody>
+<tfoot><tr><td style="padding: 0; " colspan="100%">
+<sup></sup> Not shown, touching no object in the metadata: init: resolveSummaryPeriod(), init: summaryTimes(), update_tsf, save_single, create_fireSizes. Not traced to any code (e.g. reached indirectly): burnMap, burnSummary.</td></tr></tfoot>
+</table>
+
+
+#### .inputObjects {-}
+
+during simInit: defaults for inputs not supplied
+
+![](figures/burnSummaries_io_.inputObjects.png){width=100%}
+
+
+
+#### InitSingle() {-}
+
+init event, step 3 of 4
+
+![](figures/burnSummaries_io_init_InitSingle.png){width=100%}
+
+
+
+#### InitMulti() {-}
+
+init event, step 4 of 4
+
+![](figures/burnSummaries_io_init_InitMulti.png){width=100%}
+
+
+
+#### plot {-}
+
+mode = "multi": once, at start
+
+![](figures/burnSummaries_io_plot.png){width=100%}
+
+
+
+#### summary {-}
+
+mode = "multi": once, at start
+
+![](figures/burnSummaries_io_summary.png){width=100%}
 
 ### Plotting
 
