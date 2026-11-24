@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.1.0.9006"),
+  version = list(burnSummaries = "1.1.0.9007"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -22,10 +22,8 @@ defineModule(sim, list(
   ## fireregimetools uses libarchive for extraction when it is installed, which handles the zip64
   ## archives R's internal unzip cannot -- so keep it available.
   reqdPkgs = list("archive", "data.table", "dplyr", "httr2", "PredictiveEcology/LandR@development",
-                  "FOR-CAST/fireregimetools@main (>= 0.1.0.9008)",
-                  ## fireSenseFireCauses, fireCauseCodes(), polyCauseColTxt (9156): the causes the fits model, and the
-                  ## NBAC / NFDB values in each; modelledFires() (9190, set to the real version after fireSenseUtils#261 merges)
-                  "PredictiveEcology/fireSenseUtils@development (>= 0.2.3.9190)",
+                  ## filter_fire_records(): the observed fires of `fireCauses`, without prescribed burns (9012)
+                  "FOR-CAST/fireregimetools@main (>= 0.1.0.9012)",
                   "ggplot2", "ggspatial", "googledrive", "patchwork",
                   "reproducible", "sf",
                   ## dirnamesFromSet() (bare-number replicate folders), resolveSimYears(), padYears()
@@ -34,10 +32,12 @@ defineModule(sim, list(
   parameters = bindrows(
     defineParameter("dataYear", "numeric", 2020, NA, NA,
                     "data year for the SCANFI stand-age inputs used to seed rstTimeSinceFire (single mode)"),
-    defineParameter("fireCauses", "character", fireSenseUtils::fireSenseFireCauses, NA, NA,
+    defineParameter("fireCauses", "character", NULL, NA, NA,
                     paste("(multi mode) cause groups of the observed fires the historic burn map and the observed row of the",
-                          "fire regime table count: the causes the fire model is fitted to (`fireSenseUtils::fireCauseCodes()`",
-                          "maps them to NBAC `FIRECAUS` and NFDB `CAUSE`). Prescribed burns (NBAC `PRESCRIBED`) are always left out.")),
+                          "fire regime table count, any of 'natural', 'unknown', 'human' and 'other'",
+                          "(`fireregimetools::fire_cause_group()` says which NBAC `FIRECAUS` and NFDB `CAUSE` values are which).",
+                          "`NULL` (default) keeps every cause; set it to the causes the fire model is fitted to,",
+                          "e.g. `c('natural', 'unknown')` for fireSense. Prescribed burns are always left out.")),
     defineParameter("fireTimestep", "integer", 1L, NA, NA,
                     "simulation time interval between burn events"),
     defineParameter("historicYears", "integer", c(NA_integer_, NA_integer_), NA, NA,
@@ -416,7 +416,7 @@ InitMulti <- function(sim) {
       tidyterra::mutate(YEAR = as.integer(YEAR)) |>
       terra::project(terra::crs(flammableMap)) |>
       terra::crop(terra::ext(flammableMap)) |>
-      fireSenseUtils::modelledFires(P(sim)$fireCauses, "nbac")
+      fireregimetools::filter_fire_records(P(sim)$fireCauses, "nbac")
   } else {
     ## Observed fire perimeters: NBAC (National Burned Area Composite -- satellite-derived,
     ## 1972-present, the preferred source) supplemented with NFDB polygons ONLY for the years
@@ -504,12 +504,13 @@ repFiles <- function(repDirs, fname, files = NULL) {
 ## NFDB polygons for the years before it. The boundary is a fixed year, not the years NBAC has inside
 ## the study area: a year from 1972 on with no NBAC fire here is a year in which NBAC mapped none, and
 ## filling it from the NFDB would mix the two products. NFDB polygons with no year (`YEAR` -9999, 0
-## or missing) are dropped. Only the fires the fire model is fitted to stay: `fireSenseUtils::modelledFires()` (the causes of
-## `fireCauses`, and no prescribed burn).
-historicFirePolys <- function(nbac, nfdb, nbacStartYear, fireCauses = fireSenseUtils::fireSenseFireCauses) {
-  nbac <- fireSenseUtils::modelledFires(nbac[which(nbac$YEAR >= nbacStartYear), ], fireCauses, "nbac")[, "YEAR"]
+## or missing) are dropped. Prescribed burns are dropped from both, and with `fireCauses`, fires of
+## other causes (fireregimetools::filter_fire_records()).
+historicFirePolys <- function(nbac, nfdb, nbacStartYear, fireCauses = NULL) {
+  nbac <- fireregimetools::filter_fire_records(nbac[which(nbac$YEAR >= nbacStartYear), ], fireCauses, "nbac")[, "YEAR"]
   nDated <- sum(nfdb$YEAR > 0, na.rm = TRUE)
-  backfill <- fireSenseUtils::modelledFires(nfdb[which(nfdb$YEAR > 0 & nfdb$YEAR < nbacStartYear), ], fireCauses, "nfdb")[, "YEAR"]
+  before <- nfdb[which(nfdb$YEAR > 0 & nfdb$YEAR < nbacStartYear), ]
+  backfill <- fireregimetools::filter_fire_records(before, fireCauses, "nfdb")[, "YEAR"]
 
   years <- sort(unique(backfill$YEAR))
   message(sprintf(
@@ -518,8 +519,8 @@ historicFirePolys <- function(nbac, nfdb, nbacStartYear, fireCauses = fireSenseU
   ))
   if (nrow(backfill) < nrow(nfdb)) {
     message(sprintf(
-      "  NFDB polygons not used: %d with no year, %d from %d on",
-      nrow(nfdb) - nDated, nDated - nrow(backfill), nbacStartYear
+      "  NFDB polygons not used: %d with no year, %d from %d on, %d prescribed or of another cause",
+      nrow(nfdb) - nDated, nDated - nrow(before), nbacStartYear, nrow(before) - nrow(backfill)
     ))
   }
 

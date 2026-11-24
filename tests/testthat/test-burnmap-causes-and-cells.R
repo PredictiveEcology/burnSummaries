@@ -21,24 +21,23 @@ test_that("the aggregation factor is the smallest integer whose cell is at least
   expect_identical(cellFactor(c(2000, 2000), 100), 1L) ## already coarser
 })
 
-test_that("prescribed burns and causes outside fireCauses are dropped, with a message", {
+test_that("by default every cause is kept and only prescribed burns are dropped, from both records", {
   r <- fineGrid()
-  p <- polyOf(r, 1:4, 2000L, cause = c("Natural", "Undetermined", "Human", "Natural"),
-              prescribed = c("false", "false", "false", "true"))
-  kept <- fireSenseUtils::modelledFires(p, fireSenseUtils::fireSenseFireCauses, "nbac")
-  expect_equal(nrow(kept), 2) ## natural and undetermined; the human fire and the prescribed one go
-  ## the human cause is kept when the fits model it
-  kept2 <- fireSenseUtils::modelledFires(p, c("natural", "unknown", "human"), "nbac")
-  expect_equal(nrow(kept2), 3) ## still no prescribed
+  nbac <- polyOf(r, 1:4, 1990L, cause = c("Natural", "Undetermined", "Human", "Natural"),
+                 prescribed = c("false", "false", "false", "true"))
+  nfdb <- polyOf(r, 5:6, 1960L, prescribed = c(NA, "yes")) ## NFDB polygons: PRESCRIBED "yes"
+  nfdb$CAUSE <- c("H", "N")
+  fires <- suppressMessages(historicFirePolys(nbac, nfdb, 1972L))
+  expect_identical(sort(fires$YEAR), c(1960L, 1990L, 1990L, 1990L)) ## the two prescribed fires go
 })
 
-test_that("historicFirePolys keeps only modelled-cause, non-prescribed fires of both records", {
+test_that("historicFirePolys keeps only the fires of fireCauses, and no prescribed burn, of both records", {
   r <- fineGrid()
   nbac <- polyOf(r, 1:3, 1990L, cause = c("Natural", "Human", "Undetermined"),
                  prescribed = c("false", "false", "true"))
   nfdb <- polyOf(r, 4:6, 1960L, prescribed = c(NA, NA, "yes")) ## NFDB polygons: PRESCRIBED "yes"
   nfdb$CAUSE <- c("N", "H", "N")
-  fires <- suppressMessages(historicFirePolys(nbac, nfdb, 1972L, fireSenseUtils::fireSenseFireCauses))
+  fires <- suppressMessages(historicFirePolys(nbac, nfdb, 1972L, c("natural", "unknown")))
   expect_identical(sort(fires$YEAR), c(1960L, 1990L)) ## NBAC cell 1, NFDB cell 4; the prescribed NFDB natural fire (cell 6) goes
 })
 
@@ -78,7 +77,7 @@ test_that("the simulated map is the mean of the burnable fine-cell rates in each
   expect_equal(terra::values(sim, mat = FALSE)[1], (0.5 + 0.25) / 24)
 })
 
-test_that("multi mode writes both maps at the coarse cell and drops non-modelled fires", {
+test_that("multi mode writes both maps at the coarse cell and keeps only the fires of fireCauses", {
   r <- terra::rast(nrows = 10, ncols = 10, xmin = 0, xmax = 2400, ymin = 0, ymax = 2400, crs = "EPSG:3400")
   out <- file.path(testPaths$outputPath, "multi-coarse")
   dir.create(file.path(out, "rep01"), recursive = TRUE, showWarnings = FALSE)
@@ -99,7 +98,8 @@ test_that("multi mode writes both maps at the coarse cell and drops non-modelled
     times = list(start = 0, end = 4),
     params = list(burnSummaries = list(
       mode = "multi", reps = 1L, simTimes = c(0, 4), summaryPeriod = c(2L, 4L), summaryInterval = 1L,
-      historicYears = c(2000L, 2009L), .studyAreaName = "test", .plots = NA_character_
+      historicYears = c(2000L, 2009L), fireCauses = c("natural", "unknown"),
+      .studyAreaName = "test", .plots = NA_character_
     )),
     modules = "burnSummaries",
     paths = utils::modifyList(testPaths, list(outputPath = out))
@@ -113,7 +113,7 @@ test_that("multi mode writes both maps at the coarse cell and drops non-modelled
   expect_equal(terra::values(s, mat = FALSE), rep(0, 4))
 })
 
-test_that("a record with no cause column is an error, as in the fit", {
+test_that("selecting by cause in a record with no cause column is an error", {
   p <- polyOf(fineGrid(), 1:2, 2000L)
   p$FIRECAUS <- NULL
   expect_error(historicFirePolys(p, p[integer(0), ], 1972L, "natural"), "FIRECAUS")
