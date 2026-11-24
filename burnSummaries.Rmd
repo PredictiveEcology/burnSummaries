@@ -173,6 +173,25 @@ In multi mode:
 - `summary` combines the fire sizes of all replicates and writes the fire-regime and fire-per-block tables.
 - `plot` draws the figures.
 
+```{r eventFlowCheck-burnSummaries, include = FALSE, eval = TRUE, cache = FALSE}
+## the generated figures need SpaDES.core 3.2.1.9068 or later; older versions skip them
+.efOK <- utils::packageVersion("SpaDES.core") >= "3.2.1.9068"
+```
+
+```{r eventFlow-burnSummaries, echo = FALSE, eval = .efOK, cache = FALSE, out.width = "100%", fig.pos = "H", fig.cap = "(ref:burnSummaries) events, as read from the module code with its default parameters."}
+ef <- tryCatch(SpaDES.core::moduleEventFlow("burnSummaries", path = ".."), error = function(e) e)
+SpaDES.core::includeModuleEventFlow(ef, "figures/burnSummaries_eventFlow.png")
+```
+
+```{r eventObjects-burnSummaries, echo = FALSE, eval = .efOK, cache = FALSE}
+SpaDES.core::kableModuleObjects(ef, caption = "Where each object of (ref:burnSummaries) is written and read, in run order.",
+                                lead = "Table \\@ref(tab:eventObjects-burnSummaries) lists, for each object, the code that writes it and the code that only reads it.")
+```
+
+```{r eventFigures-burnSummaries, echo = FALSE, eval = .efOK, cache = FALSE, results = "asis"}
+SpaDES.core::moduleEventFigures(ef, figDir = "figures", level = 4)
+```
+
 ### Plotting
 
 In multi mode, into `figurePath(sim)`:
