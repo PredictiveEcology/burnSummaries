@@ -6,12 +6,12 @@
   100 ha. Values are the mean annual share of the cell's burnable area burned (was: burns per 240 m cell per year).
   A coarse cell with no burnable cell is `NA`. The observed map counts each year once per cell, however many
   polygons overlap there. The observed row of `burnSummaries_fireRegime.csv` takes its area from that map.
-- The observed record keeps only fires of the new parameter `fireCauses` (default `fireSenseUtils::fireSenseFireCauses`,
-  mapped to NBAC `FIRECAUS` / NFDB `CAUSE` by `fireSenseUtils::fireCauseCodes()`) and drops prescribed burns, the fires
-  the simulation does not model. The selection is `fireSenseUtils::modelledFires()`, the function the fits and scores
-  use (NBAC `PRESCRIBED`; NFDB `PRESCRIBED`, `FIRE_TYPE`, `H-PB`). A record with no cause column stops, as in the fits.
-  This also changes the fire count and largest fire of the observed regime row. Needs fireSenseUtils >= 0.2.3.9190, a
-  placeholder for the version after fireSenseUtils#261 merges; it is set to the real version after merge.
+- The observed record drops prescribed burns, which no simulation models, and with the new parameter `fireCauses`
+  keeps only the fires of those cause groups (`natural`, `unknown`, `human`, `other`). The default, `NULL`, keeps
+  every cause; fireSense runs set it to the causes their fits model, `c("natural", "unknown")`. The selection is
+  `fireregimetools::filter_fire_records()` (fireregimetools >= 0.1.0.9012), which reads NBAC `FIRECAUS` / NFDB
+  `CAUSE` and finds prescribed burns by `PRESCRIBED`, `FIRE_TYPE`, `CAUSE` and `CAUSE2`. Selecting by cause in a
+  record with no cause column stops. This also changes the fire count and largest fire of the observed regime row.
 
 - `simOutputPath` is no longer part of the module's event cache keys (`defineParameter(cacheKey = FALSE)`; SpaDES.core >= 3.2.1.9057). No code reads it; its default, `outputPath(sim)`, differs between machines. The event cache keys of this module change once.
 
