@@ -1,19 +1,37 @@
 # burnSummaries (development version)
 
-- The two mean annual burn maps (`meanAnnualCumulBurnMap.tif`, `meanAnnualCumulBurnMapHistoric.tif`) are now on a
+## Documentation
+
+* The README shows the module's events, the objects each reads and writes, and a figure per event,
+  generated from the code (needs SpaDES.core 3.2.1.9068 or later; older versions leave them out).
+
+## Burn maps at cells of at least 100 ha; observed fires by cause (`1.1.0.9007`, `1.1.0.9008`)
+
+* The two mean annual burn maps (`meanAnnualCumulBurnMap.tif`, `meanAnnualCumulBurnMapHistoric.tif`) are now on a
   coarser grid: the flammable grid aggregated by the smallest whole factor whose cell is at least the new parameter
   `minCellHa` (default 100 ha; 240 m cells become 1.2 km, 144 ha), as fire perimeters are only meaningful at about
   100 ha. Values are the mean annual share of the cell's burnable area burned (was: burns per 240 m cell per year).
   A coarse cell with no burnable cell is `NA`. The observed map counts each year once per cell, however many
   polygons overlap there. The observed row of `burnSummaries_fireRegime.csv` takes its area from that map.
-- The observed record drops prescribed burns, which no simulation models, and with the new parameter `fireCauses`
+* The observed record drops prescribed burns, which no simulation models, and with the new parameter `fireCauses`
   keeps only the fires of those cause groups (`natural`, `unknown`, `human`, `other`). The default, `NULL`, keeps
   every cause; fireSense runs set it to the causes their fits model, `c("natural", "unknown")`. The selection is
   `fireregimetools::filter_fire_records()` (fireregimetools >= 0.1.0.9012), which reads NBAC `FIRECAUS` / NFDB
   `CAUSE` and finds prescribed burns by `PRESCRIBED`, `FIRE_TYPE`, `CAUSE` and `CAUSE2`. Selecting by cause in a
   record with no cause column stops. This also changes the fire count and largest fire of the observed regime row.
 
-- `simOutputPath` is no longer part of the module's event cache keys (`defineParameter(cacheKey = FALSE)`; SpaDES.core >= 3.2.1.9057). No code reads it; its default, `outputPath(sim)`, differs between machines. The event cache keys of this module change once.
+## `simOutputPath` is not part of the event cache keys (`1.1.0.9006`)
+
+* `simOutputPath` is no longer part of the module's event cache keys (`defineParameter(cacheKey = FALSE)`;
+  SpaDES.core >= 3.2.1.9057). No code reads it; its default, `outputPath(sim)`, differs between machines. The
+  event cache keys of this module change once.
+
+## Time since fire is reset in the year a cell burns (`1.1.0.9005`)
+
+* `update_tsf` (single mode) now runs after the fire model's burn each year (priority 8), so a cell reads 0 in
+  the year it burns, as the fire model's own count does (e.g. scfmSpread's `timeSinceFire`). At the default
+  priority (5) it ran before fireSense_burn's burn (5.13) and scfmSpread's (7.5), and reset a burned cell a
+  year late; with LandMine (Burn at 2.5) nothing changes.
 
 ## Fire regime window, observed fire count, no `reportingPolygons`
 

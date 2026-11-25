@@ -33,17 +33,13 @@ always_allow_html: true
 knitr::opts_chunk$set(echo = TRUE, eval = FALSE, warning = FALSE, 
                       cache = TRUE, cache.rebuild = FALSE, results = "hold", dpi = 300)
 
-## get citation style
-if (!file.exists("citations/ecology-letters.csl")) {
-  dir.create("citations", showWarnings = FALSE)
-  download.file("https://www.zotero.org/styles/ecology-letters?source=1", destfile = "citations/ecology-letters.csl")
-}
-
-library(Require)
-
-Require(c("SpaDES.core", "git2r", "dplyr", "data.table", "kableExtra",
-          "pander", "PredictiveEcology/SpaDES.docs"),
-        upgrade = FALSE, install = FALSE)
+library(SpaDES.core)
+library(git2r)
+library(dplyr)
+library(data.table)
+library(kableExtra)
+library(pander)
+library(SpaDES.docs)
 
 ```
 
@@ -80,16 +76,14 @@ modulePath <- if (grepl("burnSummaries$", normPath("."))) {
     normPath(modulePath)
   }
 
-badgeURL <- if (!is_detached(modulePath)) {
-  commitSHA <- sha(revparse_single(modulePath, "HEAD"))
-  repo <- sub("[.]git$", "/commit/",
-              branch_remote_url(branch_get_upstream(repository_head(modulePath))))
-  paste0(repo, commitSHA)
-} else {
-  ## if detached point to the first remote
-  remote_url(modulePath)[1]
-}
-badgeURL <- sub(".*github[.]com:", "https://github.com/", badgeURL)
+## link the badge to this commit on GitHub, whatever form the remote URL takes
+## (https with or without .git, git@github.com:, ssh://git@github.com/);
+## detached or without an upstream, use the first remote
+upstream <- if (!is_detached(modulePath)) branch_get_upstream(repository_head(modulePath))
+remoteURL <- if (is.null(upstream)) remote_url(modulePath)[1] else branch_remote_url(upstream)
+repoURL <- sub("^(ssh://)?git@github[.]com[:/]", "https://github.com/", remoteURL)
+repoURL <- sub("^https://[^/@]*@", "https://", sub("[.]git$", "", repoURL)) ## no credentials
+badgeURL <- paste0(repoURL, "/commit/", sha(revparse_single(modulePath, "HEAD")))
 
 badgePath <- SpaDES.docs::stageFigure("figures/moduleVersionBadge.png")
 
@@ -112,22 +106,39 @@ cat(paste0("[![Issues-badge](", badgePath, ")](", badgeURL,")"))
 
 :::{.rmdwarning}
 This documentation is work in progress.
-Please report any discrepancies or omissions at <https://github.com/PredictiveEcology/BC_HRV_preamble/issues>.
+Please report any discrepancies or omissions at <https://github.com/PredictiveEcology/burnSummaries/issues>.
 :::
 
 ## Module Overview
 
 ### Module summary
 
-(TODO)
+burnSummaries records the fires a fire model simulates and summarizes the fire regime they make, beside the observed fire record.
+It reads the burn outputs of three fire models:
 
-- LandMine [@Andison:1996] - based on [@Clarke:1994];
+- LandMine [@Andison:1996], based on [@Clarke:1994];
 - scfm [@Cumming:1998; @Armstrong:2003];
-- fireSense [@Marchal:2017a; @Marchal:2017b; @Marchal:2019]
+- fireSense [@Marchal:2017a; @Marchal:2017b; @Marchal:2019].
+
+It runs in one of two modes (parameter `mode`):
+
+- **single**, in each replicate, alongside the fire model.
+  It keeps the map of time since fire, which is reset to 0 in the year a cell burns, and saves it at the start of the run, in each summary year and at the end.
+  At the end of the run it writes the size of every fire, the cumulative burn map and the flammability map.
+- **multi**, once, after the replicates have run.
+  It reads every replicate's saved outputs and maps the mean annual area burned, across the replicates and from the observed fire record, on the same burnable cells.
+  It then tabulates the fire regime of each replicate and of the observed record (number of fires, area burned per year and largest fire), and the fire in each block of `summaryInterval` years.
+
+The observed record is the National Burned Area Composite (NBAC) perimeters from `nbacStartYear` (1972) on, and the National Fire Database (NFDB) polygons for earlier years.
 
 ### Module inputs and parameters
 
 Table \@ref(tab:moduleInputs-burnSummaries) shows the full list of module inputs.
+
+In single mode the module needs the fire model's flammability map (`flammableMap`, or fireSense's `flammableRTM`), its map of the year's burn (`rstCurrentBurn`) and cumulative burn map (`burnMap`), and its fire sizes: `burnSummary` from scfm or fireSense, or `fireSizes` from LandMine.
+The starting time since fire is `rstTimeSinceFire` when supplied; otherwise fireSense's `nonForest_timeSinceDisturbance`, or else the SCANFI stand age of `dataYear`, with non-flammable cells set to `NA`.
+In multi mode it reads the replicates' saved files, listed in `outputsDF` or found under `outputPath(sim)/rep<NN>`.
+`studyArea` and `fireReturnInterval`, when supplied, limit both burn maps to the cells inside the study area that have a fire return interval; `firePolys` replaces the download of the observed fire record.
 
 ```{r moduleInputs-burnSummaries, echo = FALSE, eval = TRUE, message = FALSE, warning = FALSE}
 df_inputs <- SpaDES.core::moduleInputs("burnSummaries", "..")
@@ -136,7 +147,9 @@ knitr::kable(df_inputs,
   kableExtra::kable_styling(latex_options = "scale_down", full_width = FALSE)
 ```
 
-Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnSummaries))
+Table \@ref(tab:moduleParams-burnSummaries) lists the parameters.
+`summaryPeriod` and `summaryInterval` set the years in which time since fire is saved and the length of the blocks in the fire tables; with `summaryPeriod` unset, the summaries cover the last 30% of the run (years 700 to 1000 of a run of 1000 years or more).
+In multi mode, `reps` lists the replicates, `simTimes` gives the start and end of their runs, `regimePeriod` limits the years of the simulated fire regime, and `historicYears` limits the years of the observed record.
 
 
 ```{r moduleParams-burnSummaries, echo = FALSE, eval = TRUE, message = FALSE, warning = FALSE}
@@ -147,20 +160,61 @@ knitr::kable(df_params, caption = "List of (ref:burnSummaries) parameters and th
 
 ### Events
 
-Describe what happens for each event type.
+In single mode:
+
+- `init` resolves the summary period, sets the starting time since fire if none was supplied, and checks that the maps share one grid.
+- `update_tsf`, every `fireTimestep` years after the fire model's burn, adds `fireTimestep` to time since fire and sets the cells burned that year to 0.
+- `save_single` saves time since fire at the start of the run, in each summary year and at the end, and at the end also the cumulative burn map and the flammability map.
+- `create_fireSizes`, at the end of the run, writes the replicate's fire sizes.
+
+In multi mode:
+
+- `init` reads the replicates' burn and flammability maps, fetches the observed fire record unless `firePolys` is supplied, and makes and saves the simulated and observed mean annual burn maps.
+- `summary` combines the fire sizes of all replicates and writes the fire-regime and fire-per-block tables.
+- `plot` draws the figures.
+
+```{r eventFlowCheck-burnSummaries, include = FALSE, eval = TRUE, cache = FALSE}
+## the generated figures need SpaDES.core 3.2.1.9068 or later; older versions skip them
+.efOK <- utils::packageVersion("SpaDES.core") >= "3.2.1.9068"
+```
+
+```{r eventFlow-burnSummaries, echo = FALSE, eval = .efOK, cache = FALSE, out.width = "100%", fig.pos = "H", fig.cap = "(ref:burnSummaries) events, as read from the module code with its default parameters."}
+ef <- tryCatch(SpaDES.core::moduleEventFlow("burnSummaries", path = ".."), error = function(e) e)
+SpaDES.core::includeModuleEventFlow(ef, "figures/burnSummaries_eventFlow.png")
+```
+
+```{r eventObjects-burnSummaries, echo = FALSE, eval = .efOK, cache = FALSE}
+SpaDES.core::kableModuleObjects(ef, caption = "Where each object of (ref:burnSummaries) is written and read, in run order.",
+                                lead = "Table \\@ref(tab:eventObjects-burnSummaries) lists, for each object, the code that writes it and the code that only reads it.")
+```
+
+```{r eventFigures-burnSummaries, echo = FALSE, eval = .efOK, cache = FALSE, results = "asis"}
+SpaDES.core::moduleEventFigures(ef, figDir = "figures", level = 4)
+```
 
 ### Plotting
 
-Write what is plotted.
+In multi mode, into `figurePath(sim)`:
+
+- `cumulative_burn_maps.png`: the observed and simulated mean annual burn maps, side by side;
+- `fire_per_block`: the area burned and the number of fires in each block of `summaryInterval` years, one line per replicate, with the observed burn rate scaled to a block;
+- `simulated_number_size_fires.png`: the number of simulated fires by size;
+- for a fire model that sets a target size for each fire (LandMine): the number of fires by target size (`expected_number_size_fires.png`), and target against simulated fire sizes (`exp_vs_sim_fire_sizes.png`, `exp_vs_sim_fire_sizes_hex.png`).
 
 ### Saving
 
-In multi mode, `meanAnnualCumulBurnMap.tif` (simulated) and `meanAnnualCumulBurnMapHistoric.tif` (observed) are written
-to `outputPath(sim)`. Both are on the grid of `flammableMap` aggregated by the smallest whole factor whose cell is at
-least `minCellHa` (default 100 ha; 240 m cells give factor 5, 1.2 km, 144 ha), and hold the mean annual share of the
-cell's burnable area burned. A cell with no burnable fine cell is `NA`. The observed map counts each year once per cell
-(a year's perimeters are overlaid), without prescribed burns, and, when `fireCauses` is set,
-only the fires of those causes (default: every cause).
+In single mode, into `outputPath(sim)`:
+
+- `rstTimeSinceFire_year<year>.tif`: time since fire at the start, in each summary year and at the end;
+- `burnMap_year<end>.tif` and `flammableMap_year<end>.tif`: the cumulative burn map and the flammability map at the end of the run;
+- `burnSummaries_fireSizes.csv`, and the same table as a parquet partition in `burnSummaries_fireSizes/`: the size of every fire, in cells.
+
+In multi mode, into `outputPath(sim)`:
+
+- `meanAnnualCumulBurnMap.tif` and `meanAnnualCumulBurnMapHistoric.tif`: the simulated and observed mean annual share of each cell's burnable area burned, on the grid of `flammableMap` aggregated by the smallest whole factor whose cell is at least `minCellHa` (default 100 ha; 240 m cells give factor 5, 1.2 km, 144 ha). A cell with no burnable fine cell is `NA`. The observed map counts each year once per cell (a year's perimeters are overlaid), without prescribed burns, and, when `fireCauses` is set, only the fires of those causes (default: every cause);
+- `burnSummaries_fireSizes_allReps.csv`: the fire sizes of all replicates;
+- `burnSummaries_fireRegime.csv`: the number of fires, area burned per year and largest fire, for each replicate and the observed record;
+- `burnSummaries_fireBlocks.csv`: the number of fires and area burned in each block of `summaryInterval` years, for each replicate.
 
 ### Module outputs
 
@@ -174,7 +228,9 @@ knitr::kable(df_outputs, caption = "List of (ref:burnSummaries) outputs and thei
 
 ### Links to other modules
 
-Describe any anticipated linkages to other modules, such as modules that supply input data or do post-hoc analysis.
+In single mode it runs after the fire model (`loadOrder`: after `fireSense_burn`, `LandMine` and `scfmSpread`) and reads that model's burn outputs.
+The time since fire it keeps (`rstTimeSinceFire`) is available to other modules in the same simulation.
+In multi mode it runs as a simulation of its own, over the files the single-mode replicates saved.
 
 ### Getting help
 

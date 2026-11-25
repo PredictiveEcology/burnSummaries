@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.1.0.9007"),
+  version = list(burnSummaries = "1.1.0.9008"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -157,10 +157,14 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
       if (P(sim)$mode == "single") {
         sim <- InitSingle(sim)
 
-        sim <- scheduleEvent(sim, start(sim), "burnSummaries", "update_tsf")
+        ## update_tsf comes after the fire model's burn each year (LandMine's Burn 2.5, fireSense_burn's
+        ## burn 5.13, scfmSpread's burn 7.5), so a cell reads 0 in the year it burns, as the fire
+        ## model's own count does; at the default priority (5) it reset a cell a year late after the
+        ## last two. Saves at .last() see the updated map.
+        sim <- scheduleEvent(sim, start(sim), "burnSummaries", "update_tsf", 8)
         sim <- scheduleEvent(sim, end(sim), "burnSummaries", "create_fireSizes", .last())
 
-        ## Year 0 is the map the run starts from, so it is saved before update_tsf (priority 5) adds
+        ## Year 0 is the map the run starts from, so it is saved before update_tsf (priority 8) adds
         ## fireTimestep to it, and after every module's init (SpaDES.core schedules those at
         ## .first()). At .last(), the saved year 0 was the starting map + fireTimestep.
         sim <- scheduleEvent(sim, start(sim), "burnSummaries", "save_single", .first() + 1)
@@ -185,8 +189,8 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
       sim$rstTimeSinceFire[] <- as.integer(sim$rstTimeSinceFire[]) + as.integer(P(sim)$fireTimestep) ## preserves NAs
       sim$rstTimeSinceFire[which(sim$rstCurrentBurn[] == 1)] <- 0L
 
-      ## schedule next event
-      sim <- scheduleEvent(sim, time(sim) + P(sim)$fireTimestep, "burnSummaries", "update_tsf")
+      ## schedule next event, after the fire model's burn (see init)
+      sim <- scheduleEvent(sim, time(sim) + P(sim)$fireTimestep, "burnSummaries", "update_tsf", 8)
     },
     create_fireSizes = {
       ## try to guess the replicate being run
