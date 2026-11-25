@@ -180,10 +180,8 @@ Area burned is the more reliable comparison.
 #### Fire sizes
 
 Fire sizes span several orders of magnitude, so the fire-size figures count fires in bins of the logarithm of size.
-The figures assume no particular distribution, on which the literature differs.
-@Malamud:1998 found fire sizes followed a power law over many orders of magnitude.
-@Reed:2002 found a single power law too simple to describe the sizes of fires in six North American regions over their full range.
-For lightning-caused fires in the boreal mixedwood of Alberta, @Cumming:2001 found the logarithm of fire size approximately exponential above 3 ha, and a distribution with an upper bound on fire size more suitable, as the unbounded one predicts too many large fires.
+burnSummaries fits no distribution to them.
+Distributions fitted to fire sizes include a power law [@Malamud:1998], other parametric models where a single power law does not fit the full range of sizes [@Reed:2002], and an exponential distribution of the logarithm of size with an upper bound on size [@Cumming:2001].
 For LandMine, the expected sizes are the target size drawn for each fire, compared with the area the fire burned in all its pieces.
 
 #### The observed record
