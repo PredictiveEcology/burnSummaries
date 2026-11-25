@@ -1,7 +1,7 @@
 ---
 title: "burnSummaries Manual"
-subtitle: "v.1.1.0.9007"
-date: "Last updated: 2026-11-24"
+subtitle: "v.1.1.0.9005"
+date: "Last updated: 2026-11-25"
 output:
   bookdown::html_document2:
     toc: true
@@ -32,7 +32,7 @@ always_allow_html: true
 
 
 
-[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries2692e7e7367d788d05cd5bda2721fa4c2ed366d7)
+[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries/commit/7cccf15d021acf1ad8359c7f909a8494c7efa797)
 
 [![Issues-badge](figures/issuesBadge.png)](https://github.com/PredictiveEcology/burnSummaries/issues)
 
@@ -43,22 +43,39 @@ Alex M Chubaty <achubaty@for-cast.ca> [aut, cre] (ORCID: <https://orcid.org/0000
 
 :::{.rmdwarning}
 This documentation is work in progress.
-Please report any discrepancies or omissions at <https://github.com/PredictiveEcology/BC_HRV_preamble/issues>.
+Please report any discrepancies or omissions at <https://github.com/PredictiveEcology/burnSummaries/issues>.
 :::
 
 ## Module Overview
 
 ### Module summary
 
-(TODO)
+burnSummaries records the fires a fire model simulates and summarizes the fire regime they make, beside the observed fire record.
+It reads the burn outputs of three fire models:
 
-- LandMine [@Andison:1996] - based on [@Clarke:1994];
+- LandMine [@Andison:1996], based on [@Clarke:1994];
 - scfm [@Cumming:1998; @Armstrong:2003];
-- fireSense [@Marchal:2017a; @Marchal:2017b; @Marchal:2019]
+- fireSense [@Marchal:2017a; @Marchal:2017b; @Marchal:2019].
+
+It runs in one of two modes (parameter `mode`):
+
+- **single**, in each replicate, alongside the fire model.
+  It keeps the map of time since fire, which is reset to 0 in the year a cell burns, and saves it at the start of the run, in each summary year and at the end.
+  At the end of the run it writes the size of every fire, the cumulative burn map and the flammability map.
+- **multi**, once, after the replicates have run.
+  It reads every replicate's saved outputs and maps the mean annual area burned, across the replicates and from the observed fire record, on the same burnable cells.
+  It then tabulates the fire regime of each replicate and of the observed record (number of fires, area burned per year and largest fire), and the fire in each block of `summaryInterval` years.
+
+The observed record is the National Burned Area Composite (NBAC) perimeters from `nbacStartYear` (1972) on, and the National Fire Database (NFDB) polygons for earlier years.
 
 ### Module inputs and parameters
 
 Table \@ref(tab:moduleInputs-burnSummaries) shows the full list of module inputs.
+
+In single mode the module needs the fire model's flammability map (`flammableMap`, or fireSense's `flammableRTM`), its map of the year's burn (`rstCurrentBurn`) and cumulative burn map (`burnMap`), and its fire sizes: `burnSummary` from scfm or fireSense, or `fireSizes` from LandMine.
+The starting time since fire is `rstTimeSinceFire` when supplied; otherwise fireSense's `nonForest_timeSinceDisturbance`, or else the SCANFI stand age of `dataYear`, with non-flammable cells set to `NA`.
+In multi mode it reads the replicates' saved files, listed in `outputsDF` or found under `outputPath(sim)/rep<NN>`.
+`studyArea` and `fireReturnInterval`, when supplied, limit both burn maps to the cells inside the study area that have a fire return interval; `firePolys` replaces the download of the observed fire record.
 
 <table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;">
 <caption>(\#tab:moduleInputs-burnSummaries)(\#tab:moduleInputs-burnSummaries)List of (ref:burnSummaries) input objects and their description.</caption>
@@ -140,7 +157,9 @@ Table \@ref(tab:moduleInputs-burnSummaries) shows the full list of module inputs
 </tbody>
 </table>
 
-Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnSummaries))
+Table \@ref(tab:moduleParams-burnSummaries) lists the parameters.
+`summaryPeriod` and `summaryInterval` set the years in which time since fire is saved and the length of the blocks in the fire tables; with `summaryPeriod` unset, the summaries cover the last 30% of the run (years 700 to 1000 of a run of 1000 years or more).
+In multi mode, `reps` lists the replicates, `simTimes` gives the start and end of their runs, `regimePeriod` limits the years of the simulated fire regime, and `historicYears` limits the years of the observed record.
 
 
 <table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;">
@@ -164,15 +183,6 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> data year for the SCANFI stand-age inputs used to seed rstTimeSinceFire (single mode) </td>
-   <td style="text-align:left;"> TRUE </td>
-  </tr>
-  <tr>
-   <td style="text-align:left;"> fireCauses </td>
-   <td style="text-align:left;"> character </td>
-   <td style="text-align:left;">  </td>
-   <td style="text-align:left;"> NA </td>
-   <td style="text-align:left;"> NA </td>
-   <td style="text-align:left;"> (multi mode) cause groups of the observed fires the historic burn map and the observed row of the fire regime table count, any of 'natural', 'unknown', 'human' and 'other' (`fireregimetools::fire_cause_group()` says which NBAC `FIRECAUS` and NFDB `CAUSE` values are which). `NULL` (default) keeps every cause; set it to the causes the fire model is fitted to, e.g. `c('natural', 'unknown')` for fireSense. Prescribed burns are always left out. </td>
    <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
@@ -200,15 +210,6 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> use 'single' to run part of a simulation; use 'multi' to run as part of postprocessing multiple runs. </td>
-   <td style="text-align:left;"> TRUE </td>
-  </tr>
-  <tr>
-   <td style="text-align:left;"> minCellHa </td>
-   <td style="text-align:left;"> numeric </td>
-   <td style="text-align:left;"> 100 </td>
-   <td style="text-align:left;"> 0 </td>
-   <td style="text-align:left;"> NA </td>
-   <td style="text-align:left;"> (multi mode) smallest cell (ha) of the two mean annual burn maps. Fire perimeters are only meaningful at about 100 ha, so both maps are aggregated from the grid of `flammableMap` by the smallest whole factor whose cell is at least this large (240 m cells: factor 5, 1.2 km, 144 ha). Values are the mean annual share of the cell's burnable area burned. </td>
    <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
@@ -245,7 +246,7 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> Directory specifying the location of the simulation outputs. </td>
-   <td style="text-align:left;"> FALSE </td>
+   <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
    <td style="text-align:left;"> simTimes </td>
@@ -351,20 +352,152 @@ Provide a summary of user-visible parameters (Table \@ref(tab:moduleParams-burnS
 
 ### Events
 
-Describe what happens for each event type.
+In single mode:
+
+- `init` resolves the summary period, sets the starting time since fire if none was supplied, and checks that the maps share one grid.
+- `update_tsf`, every `fireTimestep` years after the fire model's burn, adds `fireTimestep` to time since fire and sets the cells burned that year to 0.
+- `save_single` saves time since fire at the start of the run, in each summary year and at the end, and at the end also the cumulative burn map and the flammability map.
+- `create_fireSizes`, at the end of the run, writes the replicate's fire sizes.
+
+In multi mode:
+
+- `init` reads the replicates' burn and flammability maps, fetches the observed fire record unless `firePolys` is supplied, and makes and saves the simulated and observed mean annual burn maps.
+- `summary` combines the fire sizes of all replicates and writes the fire-regime and fire-per-block tables.
+- `plot` draws the figures.
+
+
+
+<div class="figure">
+<img src="figures/burnSummaries_eventFlow.png" alt="(ref:burnSummaries) events, as read from the module code with its default parameters." width="100%" />
+<p class="caption">(\#fig:eventFlow-burnSummaries)(ref:burnSummaries) events, as read from the module code with its default parameters.</p>
+</div>
+
+Table \@ref(tab:eventObjects-burnSummaries) lists, for each object, the code that writes it and the code that only reads it.
+
+<table class="table" style="width: auto !important; border-bottom: 0;">
+<caption>(\#tab:eventObjects-burnSummaries)Where each object of (ref:burnSummaries) is written and read, in run order.</caption>
+ <thead>
+  <tr>
+   <th style="text-align:left;"> Object </th>
+   <th style="text-align:left;"> Written by </th>
+   <th style="text-align:left;"> Read by </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr grouplength="7"><td colspan="3" style="border-bottom: 1px solid;"><strong>Inputs</strong></td></tr>
+<tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> flammableMap </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> init: InitSingle() </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> nonForest_timeSinceDisturbance </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> init: InitSingle() </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> rstCurrentBurn </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> init: InitSingle() </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> firePolys </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> init: InitMulti() </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> fireReturnInterval </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> init: InitMulti() </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> outputsDF </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> init: InitMulti() </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> studyArea </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> init: InitMulti() </td>
+  </tr>
+  <tr grouplength="2"><td colspan="3" style="border-bottom: 1px solid;"><strong>Inputs the module also updates</strong></td></tr>
+<tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> rstTimeSinceFire </td>
+   <td style="text-align:left;"> .inputObjects (default), init: InitSingle() </td>
+   <td style="text-align:left;">  </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> fireSizes </td>
+   <td style="text-align:left;"> summary (multi) </td>
+   <td style="text-align:left;"> plot (multi) </td>
+  </tr>
+</tbody>
+<tfoot><tr><td style="padding: 0; " colspan="100%">
+<sup></sup> Not shown, touching no object in the metadata: init: resolveSummaryPeriod(), init: summaryTimes(), update_tsf, save_single, create_fireSizes. Not traced to any code (e.g. reached indirectly): burnMap, burnSummary.</td></tr></tfoot>
+</table>
+
+
+#### .inputObjects {-}
+
+during simInit: defaults for inputs not supplied
+
+![](figures/burnSummaries_io_.inputObjects.png){width=100%}
+
+
+
+#### InitSingle() {-}
+
+init event, step 3 of 4
+
+![](figures/burnSummaries_io_init_InitSingle.png){width=100%}
+
+
+
+#### InitMulti() {-}
+
+init event, step 4 of 4
+
+![](figures/burnSummaries_io_init_InitMulti.png){width=100%}
+
+
+
+#### plot {-}
+
+mode = "multi": once, at start
+
+![](figures/burnSummaries_io_plot.png){width=100%}
+
+
+
+#### summary {-}
+
+mode = "multi": once, at start
+
+![](figures/burnSummaries_io_summary.png){width=100%}
 
 ### Plotting
 
-Write what is plotted.
+In multi mode, into `figurePath(sim)`:
+
+- `cumulative_burn_maps.png`: the observed and simulated mean annual burn maps, side by side;
+- `fire_per_block`: the area burned and the number of fires in each block of `summaryInterval` years, one line per replicate, with the observed burn rate scaled to a block;
+- `simulated_number_size_fires.png`: the number of simulated fires by size;
+- for a fire model that sets a target size for each fire (LandMine): the number of fires by target size (`expected_number_size_fires.png`), and target against simulated fire sizes (`exp_vs_sim_fire_sizes.png`, `exp_vs_sim_fire_sizes_hex.png`).
 
 ### Saving
 
-In multi mode, `meanAnnualCumulBurnMap.tif` (simulated) and `meanAnnualCumulBurnMapHistoric.tif` (observed) are written
-to `outputPath(sim)`. Both are on the grid of `flammableMap` aggregated by the smallest whole factor whose cell is at
-least `minCellHa` (default 100 ha; 240 m cells give factor 5, 1.2 km, 144 ha), and hold the mean annual share of the
-cell's burnable area burned. A cell with no burnable fine cell is `NA`. The observed map counts each year once per cell
-(a year's perimeters are overlaid), without prescribed burns, and, when `fireCauses` is set,
-only the fires of those causes (default: every cause).
+In single mode, into `outputPath(sim)`:
+
+- `rstTimeSinceFire_year<year>.tif`: time since fire at the start, in each summary year and at the end;
+- `burnMap_year<end>.tif` and `flammableMap_year<end>.tif`: the cumulative burn map and the flammability map at the end of the run;
+- `burnSummaries_fireSizes.csv`, and the same table as a parquet partition in `burnSummaries_fireSizes/`: the size of every fire, in cells.
+
+In multi mode, into `outputPath(sim)`:
+
+- `meanAnnualCumulBurnMap.tif` and `meanAnnualCumulBurnMapHistoric.tif`: the simulated and observed mean annual burn maps;
+- `burnSummaries_fireSizes_allReps.csv`: the fire sizes of all replicates;
+- `burnSummaries_fireRegime.csv`: the number of fires, area burned per year and largest fire, for each replicate and the observed record;
+- `burnSummaries_fireBlocks.csv`: the number of fires and area burned in each block of `summaryInterval` years, for each replicate.
 
 ### Module outputs
 
@@ -395,7 +528,9 @@ Description of the module outputs (Table \@ref(tab:moduleOutputs-burnSummaries))
 
 ### Links to other modules
 
-Describe any anticipated linkages to other modules, such as modules that supply input data or do post-hoc analysis.
+In single mode it runs after the fire model (`loadOrder`: after `fireSense_burn`, `LandMine` and `scfmSpread`) and reads that model's burn outputs.
+The time since fire it keeps (`rstTimeSinceFire`) is available to other modules in the same simulation.
+In multi mode it runs as a simulation of its own, over the files the single-mode replicates saved.
 
 ### Getting help
 
