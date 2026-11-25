@@ -5,7 +5,7 @@
 * The README shows the module's events, the objects each reads and writes, and a figure per event,
   generated from the code (needs SpaDES.core 3.2.1.9068 or later; older versions leave them out).
 
-## Burn maps at cells of at least 100 ha; observed fires by cause (`1.1.0.9007`, `1.1.0.9008`)
+## Burn maps at cells of at least 100 ha; observed fires by cause (`1.1.0.9007` to `1.1.0.9009`)
 
 * The two mean annual burn maps (`meanAnnualCumulBurnMap.tif`, `meanAnnualCumulBurnMapHistoric.tif`) are now on a
   coarser grid: the flammable grid aggregated by the smallest whole factor whose cell is at least the new parameter
@@ -19,6 +19,9 @@
   `fireregimetools::filter_fire_records()` (fireregimetools >= 0.1.0.9012), which reads NBAC `FIRECAUS` / NFDB
   `CAUSE` and finds prescribed burns by `PRESCRIBED`, `FIRE_TYPE`, `CAUSE` and `CAUSE2`. Selecting by cause in a
   record with no cause column stops. This also changes the fire count and largest fire of the observed regime row.
+* The mean annual burn rates in the log weight each coarse cell by the burnable cells it holds, so they are the
+  share of the burnable area burned per year (was: every coarse cell counted alike, so an edge cell with one
+  burnable cell counted as much as a full one). The maps are unchanged.
 
 ## `simOutputPath` is not part of the event cache keys (`1.1.0.9006`)
 

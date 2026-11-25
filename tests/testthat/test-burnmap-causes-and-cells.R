@@ -77,6 +77,21 @@ test_that("the simulated map is the mean of the burnable fine-cell rates in each
   expect_equal(terra::values(sim, mat = FALSE)[1], (0.5 + 0.25) / 24)
 })
 
+test_that("the mean burn rate weights each coarse cell by the burnable fine cells it holds", {
+  r <- fineGrid()
+  burnable <- rep(FALSE, terra::ncell(r))
+  rc <- terra::rowColFromCell(r, seq_len(terra::ncell(r)))
+  burnable[rc[, 1] <= 5 & rc[, 2] <= 5] <- TRUE ## coarse cell 1: all 25 fine cells, never burned
+  lone <- terra::cellFromRowCol(r, 1, 6)
+  burnable[lone] <- TRUE ## coarse cell 2: one burnable fine cell, burned every year
+  rate <- terra::rast(r, vals = 0)
+  rate[lone] <- 1
+  sim <- coarseShare(rate, burnable, 5L)
+  expect_equal(terra::values(sim, mat = FALSE)[1:2], c(0, 1))
+  expect_equal(burnableMean(sim, r, burnable, 5L), 1 / 26) ## the unweighted mean of the two cells is 1/2
+  expect_equal(burnableMean(coarseShare(rate, burnable, 1L), r, burnable, 1L), 1 / 26)
+})
+
 test_that("multi mode writes both maps at the coarse cell and keeps only the fires of fireCauses", {
   r <- terra::rast(nrows = 10, ncols = 10, xmin = 0, xmax = 2400, ymin = 0, ymax = 2400, crs = "EPSG:3400")
   out <- file.path(testPaths$outputPath, "multi-coarse")

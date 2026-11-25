@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.1.0.9008"),
+  version = list(burnSummaries = "1.1.0.9009"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -470,8 +470,8 @@ InitMulti <- function(sim) {
   message(sprintf(
     "  mean annual burn rate in the %d burnable cells (share burned per year): historic %s, simulated %s",
     sum(burnable),
-    format(mean(terra::values(meanAnnualCumulBurnMapHistoric, mat = FALSE), na.rm = TRUE), digits = 4),
-    format(mean(terra::values(meanAnnualCumulBurnMap, mat = FALSE), na.rm = TRUE), digits = 4)
+    format(burnableMean(meanAnnualCumulBurnMapHistoric, flammableMap, burnable, fact), digits = 4),
+    format(burnableMean(meanAnnualCumulBurnMap, flammableMap, burnable, fact), digits = 4)
   ))
   message("...done")
 
@@ -633,9 +633,19 @@ coarseShare <- function(x, burnable, fact) {
   x <- onCells(x, burnable)
   if (fact > 1L) {
     x <- terra::aggregate(x, fact, "mean", na.rm = TRUE)
-    x <- terra::setValues(x, replace(terra::values(x, mat = FALSE), is.nan(terra::values(x, mat = FALSE)), NA))
+    v <- terra::values(x, mat = FALSE)
+    x <- terra::setValues(x, replace(v, is.nan(v), NA))
   }
   x
+}
+
+## The mean of `x`, a share per cell of the grid aggregated by `fact` (coarseShare()), over the burnable fine
+## cells: each cell is weighted by the burnable fine cells it holds, so a cell at the edge of the land with one
+## burnable fine cell counts as that one fine cell, not as a whole cell.
+burnableMean <- function(x, flammableMap, burnable, fact) {
+  n <- onCells(terra::rast(flammableMap, vals = 1), burnable)
+  if (fact > 1L) n <- terra::aggregate(n, fact, "sum", na.rm = TRUE)
+  stats::weighted.mean(terra::values(x, mat = FALSE), terra::values(n, mat = FALSE), na.rm = TRUE)
 }
 
 ## The historic burn map (multi mode): the mean annual share of each cell's burnable area burned, on the
