@@ -1,6 +1,6 @@
 ---
 title: "burnSummaries Manual"
-subtitle: "v.1.1.0.9009"
+subtitle: "v.1.1.0.9012"
 date: "Last updated: 2026-11-25"
 output:
   bookdown::html_document2:
@@ -32,7 +32,7 @@ always_allow_html: true
 
 
 
-[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries/commit/adbf3b1287dfd022687ed480499879723b18a6b5)
+[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries/commit/d4503abc240d2d6b825aea654bbeac11b0bbeb3d)
 
 [![Issues-badge](figures/issuesBadge.png)](https://github.com/PredictiveEcology/burnSummaries/issues)
 
@@ -67,6 +67,80 @@ It runs in one of two modes (parameter `mode`):
   It then tabulates the fire regime of each replicate and of the observed record (number of fires, area burned per year and largest fire), and the fire in each block of `summaryInterval` years.
 
 The observed record is the National Burned Area Composite (NBAC) perimeters from `nbacStartYear` (1972) on, and the National Fire Database (NFDB) polygons for earlier years.
+
+### Fire-regime metrics
+
+The simulated and observed fire regimes are summarized over the same land: the burnable cells, which are flammable, inside the study area and have a fire return interval.
+
+#### Mean annual burn rate and fire cycle
+
+The mean annual burn rate is the share of the burnable area that burns per year: over the replicates and years of the run for the simulated rate, and over the years of record for the observed one.
+@Johnson:1985 call it the annual percent burned.
+Its reciprocal is the fire cycle, the time needed to burn an area equal to the study area [@VanWagner:1978; @Johnson:1994], which @Li:2002 treats as the same quantity as the fire rotation, the return period and the fire return interval (the name of LandMine's input).
+Each part of the study area need not burn once in a fire cycle, only an area equal to it, so area that burns again counts again [@Johnson:1994; @Li:2002].
+
+The two burn maps give the rate for cells of at least 100 ha (by default), as the mean annual share of each cell's burnable area that burned.
+A year counts once in a cell, however many perimeters overlap there.
+In the fire-regime table, the observed area burned per year is this share times each cell's burnable area, summed over the cells.
+The simulated area burned per year is the sum of the replicate's fire sizes over its years, which can include land outside the burnable cells, as fire sizes carry no locations.
+
+The observed rate is the area burned divided by the length of the record, years without fire included [@Li:2002].
+The record is the years set by `historicYears`, or else the first to the last year of the record itself.
+Leaving out fire-free years at either end of a record would overstate the rate.
+
+Area burned varies greatly from year to year.
+For the boreal mixedwood of northeastern Alberta, @Armstrong:1999 characterized annual area burned as independent draws from a lognormal distribution, and found by simulation that mean annual burn rates estimated from it were highly imprecise, even from long records.
+In a simulated landscape, @Li:2002 needed 35 to 40 years of annual fire maps for a stable estimate of the fire cycle, and noted that fire records usually cover much less time than a fire cycle, so that a reliable estimate is unlikely.
+Li suggested that fire cycles remain useful for comparing regions or vegetation types when the same method is applied to each over the same period.
+The fire-per-block figure shows how much the simulated area burned varies between blocks of years and between replicates, beside the single observed rate.
+
+#### Time since fire
+
+Time since fire is the number of years since a cell last burned, and is 0 in the year it burns.
+When every cell has the same chance of burning each year, whatever its age, time since fire follows a negative exponential distribution, with a mean equal to the fire cycle [@VanWagner:1978; @Johnson:1985; @Johnson:1994].
+One landscape at one time comes close to that distribution only when it is large compared with its fires and the burn rate does not vary between years [@Boychuk:1997].
+When the burn rate varies between years, the age distribution of one landscape varies widely around the negative exponential, even at very large scales, and only its average over time is exponential [@Boychuk:1997]; @Armstrong:1999 found no equilibrium age distribution under a highly variable annual burn rate.
+A simulated map of time since fire therefore need not look like the negative exponential to be correct.
+
+#### Number of fires and largest fire
+
+Each replicate's number of fires and largest fire cover the years of the run, or the years set by `regimePeriod`.
+LandMine records a fire that runs short of its target size and is re-ignited as several pieces, which together are one fire; the pieces need not be contiguous, so a mapped record could show such a fire as several perimeters.
+Each observed perimeter is one fire, counted when it covers burnable land, and its size is the burnable land inside it.
+
+Most fires are small, but a few large ones burn most of the area: in Canada in 1959 to 1997, fires larger than 200 ha were 3.1% of all fires and accounted for about 97% of the area burned [@Stocks:2002].
+Several national analyses of fire regimes count only fires of 200 ha or more [@Stocks:2002; @Parisien:2006; @Hanes:2019].
+burnSummaries counts fires of every size, down to one cell for the simulated fires and to the smallest fire mapped in the observed record.
+Fires that go undetected are usually small, so they change the number of fires much more than the area burned or the fire cycle, and the number of fires recorded can change over time with the ability to detect fires in remote areas [@Li:2002].
+Area burned is the more reliable comparison.
+
+#### Fire sizes
+
+Fire sizes span several orders of magnitude, so the fire-size figures count fires in bins of the logarithm of size.
+burnSummaries fits no distribution to them.
+Distributions fitted to fire sizes include a power law [@Malamud:1998], other parametric models where a single power law does not fit the full range of sizes [@Reed:2002], and an exponential distribution of the logarithm of size with an upper bound on size [@Cumming:2001].
+For LandMine, the expected sizes are the target size drawn for each fire, compared with the area the fire burned in all its pieces.
+
+#### The observed record
+
+NBAC combines fire polygons mapped from 30 m Landsat imagery with high-quality agency polygons, and maps the remaining fires from coarser satellite data [@Hall:2020].
+Mapped fire perimeters include unburned patches.
+For the fires of 1984 to 2009 in Yosemite and Glacier national parks and the Yukon-Charley Rivers National Preserve in Alaska, 35%, 14% and 13% of the area inside fire perimeters was unburned [@Kolden:2012, p. 42].
+For 24 fires in the Alberta foothills, all six burn-pattern metrics measured were sensitive to how a fire's boundary was drawn [@Andison:2012], and fire management agencies remove unburned islands from their perimeters inconsistently [@Hall:2020].
+burnSummaries counts a cell as burned when a perimeter covers its centre, so the observed burn rate includes unburned patches inside perimeters, while the simulated rate counts only the cells a fire burned.
+
+The observed record is also not a constant baseline.
+Nationally, area burned and the number of fires of 200 ha or more increased in Canada from 1959 to 2015 [@Hanes:2019].
+Fire cycles in the boreal forest have also changed over past centuries [@Bergeron:2004], with climate and with land use around a study area [@Weir:2000].
+Comparing the simulated regime with the observed one treats the record as one sample of the range of variation of the fire regime [@Landres:1999; @Keane:2009], and no single period or extent defines that range [@Landres:1999].
+
+#### Where the metrics are
+
+- Mean annual burn rate: `meanAnnualCumulBurnMap.tif` (simulated) and `meanAnnualCumulBurnMapHistoric.tif` (observed); cell size from `minCellHa`.
+- Area burned per year, number of fires and largest fire: `burnSummaries_fireRegime.csv`, one row per replicate and one for the observed record; years from `regimePeriod` and `historicYears`.
+- Fire per block of `summaryInterval` years: `burnSummaries_fireBlocks.csv` and the `fire_per_block` figure.
+- Time since fire: `rstTimeSinceFire_year<year>.tif`.
+- Fire sizes: `burnSummaries_fireSizes_allReps.csv` (one row per LandMine piece) and the fire-size figures (one per fire).
 
 ### Module inputs and parameters
 
@@ -348,6 +422,15 @@ In multi mode, `reps` lists the replicates, `simTimes` gives the start and end o
    <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
+   <td style="text-align:left;"> .rep </td>
+   <td style="text-align:left;"> integer </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> (single mode) the replicate this run is; `setupProject()` sets it from `.globals$.rep`. `NA` (the default): `reps` when it names one replicate, else the last `repNN` folder of `outputPath`. </td>
+   <td style="text-align:left;"> TRUE </td>
+  </tr>
+  <tr>
    <td style="text-align:left;"> .seed </td>
    <td style="text-align:left;"> list </td>
    <td style="text-align:left;">  </td>
@@ -447,11 +530,11 @@ Table \@ref(tab:eventObjects-burnSummaries) lists, for each object, the code tha
   <tr>
    <td style="text-align:left;padding-left: 2em;" indentlevel="1"> fireSizes </td>
    <td style="text-align:left;"> summary (multi) </td>
-   <td style="text-align:left;"> plot (multi) </td>
+   <td style="text-align:left;">  </td>
   </tr>
 </tbody>
 <tfoot><tr><td style="padding: 0; " colspan="100%">
-<sup></sup> Not shown, touching no object in the metadata: init: resolveSummaryPeriod(), init: summaryTimes(), update_tsf, save_single, create_fireSizes. Not traced to any code (e.g. reached indirectly): burnMap, burnSummary.</td></tr></tfoot>
+<sup></sup> Not shown, touching no object in the metadata: init: resolveSummaryPeriod(), init: summaryTimes(), update_tsf, save_single, create_fireSizes, plot. Not traced to any code (e.g. reached indirectly): burnMap, burnSummary.</td></tr></tfoot>
 </table>
 
 
@@ -476,14 +559,6 @@ init event, step 3 of 4
 init event, step 4 of 4
 
 ![](figures/burnSummaries_io_init_InitMulti.png){width=100%}
-
-
-
-#### plot {-}
-
-mode = "multi": once, at start
-
-![](figures/burnSummaries_io_plot.png){width=100%}
 
 
 
