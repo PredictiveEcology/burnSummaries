@@ -1,6 +1,6 @@
 ---
 title: "burnSummaries Manual"
-subtitle: "v.1.1.0.9005"
+subtitle: "v.1.1.0.9009"
 date: "Last updated: 2026-11-25"
 output:
   bookdown::html_document2:
@@ -32,7 +32,7 @@ always_allow_html: true
 
 
 
-[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries/commit/7cccf15d021acf1ad8359c7f909a8494c7efa797)
+[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries/commit/327110edb5d1117a2833e338ad5bb6b47e482879)
 
 [![Issues-badge](figures/issuesBadge.png)](https://github.com/PredictiveEcology/burnSummaries/issues)
 
@@ -186,6 +186,15 @@ In multi mode, `reps` lists the replicates, `simTimes` gives the start and end o
    <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
+   <td style="text-align:left;"> fireCauses </td>
+   <td style="text-align:left;"> character </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> (multi mode) cause groups of the observed fires the historic burn map and the observed row of the fire regime table count, any of 'natural', 'unknown', 'human' and 'other' (`fireregimetools::fire_cause_group()` says which NBAC `FIRECAUS` and NFDB `CAUSE` values are which). `NULL` (default) keeps every cause; set it to the causes the fire model is fitted to, e.g. `c('natural', 'unknown')` for fireSense. Prescribed burns are always left out. </td>
+   <td style="text-align:left;"> TRUE </td>
+  </tr>
+  <tr>
    <td style="text-align:left;"> fireTimestep </td>
    <td style="text-align:left;"> integer </td>
    <td style="text-align:left;"> 1 </td>
@@ -210,6 +219,15 @@ In multi mode, `reps` lists the replicates, `simTimes` gives the start and end o
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> use 'single' to run part of a simulation; use 'multi' to run as part of postprocessing multiple runs. </td>
+   <td style="text-align:left;"> TRUE </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> minCellHa </td>
+   <td style="text-align:left;"> numeric </td>
+   <td style="text-align:left;"> 100 </td>
+   <td style="text-align:left;"> 0 </td>
+   <td style="text-align:left;"> NA </td>
+   <td style="text-align:left;"> (multi mode) smallest cell (ha) of the two mean annual burn maps. Fire perimeters are only meaningful at about 100 ha, so both maps are aggregated from the grid of `flammableMap` by the smallest whole factor whose cell is at least this large (240 m cells: factor 5, 1.2 km, 144 ha). Values are the mean annual share of the cell's burnable area burned. </td>
    <td style="text-align:left;"> TRUE </td>
   </tr>
   <tr>
@@ -246,7 +264,7 @@ In multi mode, `reps` lists the replicates, `simTimes` gives the start and end o
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> NA </td>
    <td style="text-align:left;"> Directory specifying the location of the simulation outputs. </td>
-   <td style="text-align:left;"> TRUE </td>
+   <td style="text-align:left;"> FALSE </td>
   </tr>
   <tr>
    <td style="text-align:left;"> simTimes </td>
@@ -494,7 +512,7 @@ In single mode, into `outputPath(sim)`:
 
 In multi mode, into `outputPath(sim)`:
 
-- `meanAnnualCumulBurnMap.tif` and `meanAnnualCumulBurnMapHistoric.tif`: the simulated and observed mean annual burn maps;
+- `meanAnnualCumulBurnMap.tif` and `meanAnnualCumulBurnMapHistoric.tif`: the simulated and observed mean annual share of each cell's burnable area burned, on the grid of `flammableMap` aggregated by the smallest whole factor whose cell is at least `minCellHa` (default 100 ha; 240 m cells give factor 5, 1.2 km, 144 ha). A cell with no burnable fine cell is `NA`. The observed map counts each year once per cell (a year's perimeters are overlaid), without prescribed burns, and, when `fireCauses` is set, only the fires of those causes (default: every cause);
 - `burnSummaries_fireSizes_allReps.csv`: the fire sizes of all replicates;
 - `burnSummaries_fireRegime.csv`: the number of fires, area burned per year and largest fire, for each replicate and the observed record;
 - `burnSummaries_fireBlocks.csv`: the number of fires and area burned in each block of `summaryInterval` years, for each replicate.

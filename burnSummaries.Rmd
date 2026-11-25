@@ -211,7 +211,7 @@ In single mode, into `outputPath(sim)`:
 
 In multi mode, into `outputPath(sim)`:
 
-- `meanAnnualCumulBurnMap.tif` and `meanAnnualCumulBurnMapHistoric.tif`: the simulated and observed mean annual burn maps;
+- `meanAnnualCumulBurnMap.tif` and `meanAnnualCumulBurnMapHistoric.tif`: the simulated and observed mean annual share of each cell's burnable area burned, on the grid of `flammableMap` aggregated by the smallest whole factor whose cell is at least `minCellHa` (default 100 ha; 240 m cells give factor 5, 1.2 km, 144 ha). A cell with no burnable fine cell is `NA`. The observed map counts each year once per cell (a year's perimeters are overlaid), without prescribed burns, and, when `fireCauses` is set, only the fires of those causes (default: every cause);
 - `burnSummaries_fireSizes_allReps.csv`: the fire sizes of all replicates;
 - `burnSummaries_fireRegime.csv`: the number of fires, area burned per year and largest fire, for each replicate and the observed record;
 - `burnSummaries_fireBlocks.csv`: the number of fires and area burned in each block of `summaryInterval` years, for each replicate.

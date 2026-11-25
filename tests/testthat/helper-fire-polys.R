@@ -10,5 +10,7 @@ cellPolys <- function(r, cells, years) {
   v <- terra::vect(wkt, crs = terra::crs(r))
   v$YEAR <- as.integer(years)
   v$SIZE_HA <- rep(1, length(years))
+  v$FIRECAUS <- "Natural" # the loaders keep each source's cause column (NBAC FIRECAUS, NFDB CAUSE)
+  v$CAUSE <- "N"
   v
 }
