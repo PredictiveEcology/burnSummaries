@@ -32,7 +32,7 @@ always_allow_html: true
 
 
 
-[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries/commit/d4503abc240d2d6b825aea654bbeac11b0bbeb3d)
+[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries/commit/3f37a628f4530a8000d7dcea9c4af4a9d82e276d)
 
 [![Issues-badge](figures/issuesBadge.png)](https://github.com/PredictiveEcology/burnSummaries/issues)
 
@@ -485,11 +485,11 @@ Table \@ref(tab:eventObjects-burnSummaries) lists, for each object, the code tha
   </tr>
  </thead>
 <tbody>
-  <tr grouplength="7"><td colspan="3" style="border-bottom: 1px solid;"><strong>Inputs</strong></td></tr>
+  <tr grouplength="9"><td colspan="3" style="border-bottom: 1px solid;"><strong>Inputs</strong></td></tr>
 <tr>
    <td style="text-align:left;padding-left: 2em;" indentlevel="1"> flammableMap </td>
    <td style="text-align:left;">  </td>
-   <td style="text-align:left;"> init: InitSingle() </td>
+   <td style="text-align:left;"> init: InitSingle(), save_single (single) </td>
   </tr>
   <tr>
    <td style="text-align:left;padding-left: 2em;" indentlevel="1"> nonForest_timeSinceDisturbance </td>
@@ -499,7 +499,7 @@ Table \@ref(tab:eventObjects-burnSummaries) lists, for each object, the code tha
   <tr>
    <td style="text-align:left;padding-left: 2em;" indentlevel="1"> rstCurrentBurn </td>
    <td style="text-align:left;">  </td>
-   <td style="text-align:left;"> init: InitSingle() </td>
+   <td style="text-align:left;"> init: InitSingle(), update_tsf (single) </td>
   </tr>
   <tr>
    <td style="text-align:left;padding-left: 2em;" indentlevel="1"> firePolys </td>
@@ -521,20 +521,30 @@ Table \@ref(tab:eventObjects-burnSummaries) lists, for each object, the code tha
    <td style="text-align:left;">  </td>
    <td style="text-align:left;"> init: InitMulti() </td>
   </tr>
+  <tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> burnMap </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> save_single (single) </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;padding-left: 2em;" indentlevel="1"> burnSummary </td>
+   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> create_fireSizes (single) </td>
+  </tr>
   <tr grouplength="2"><td colspan="3" style="border-bottom: 1px solid;"><strong>Inputs the module also updates</strong></td></tr>
 <tr>
    <td style="text-align:left;padding-left: 2em;" indentlevel="1"> rstTimeSinceFire </td>
-   <td style="text-align:left;"> .inputObjects (default), init: InitSingle() </td>
-   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> .inputObjects (default), init: InitSingle(), update_tsf (single) </td>
+   <td style="text-align:left;"> save_single (single) </td>
   </tr>
   <tr>
    <td style="text-align:left;padding-left: 2em;" indentlevel="1"> fireSizes </td>
    <td style="text-align:left;"> summary (multi) </td>
-   <td style="text-align:left;">  </td>
+   <td style="text-align:left;"> create_fireSizes (single) </td>
   </tr>
 </tbody>
 <tfoot><tr><td style="padding: 0; " colspan="100%">
-<sup></sup> Not shown, touching no object in the metadata: init: resolveSummaryPeriod(), init: summaryTimes(), update_tsf, save_single, create_fireSizes, plot. Not traced to any code (e.g. reached indirectly): burnMap, burnSummary.</td></tr></tfoot>
+<sup></sup> Not shown, touching no object in the metadata: init: resolveSummaryPeriod(), init: summaryTimes(), plot.</td></tr></tfoot>
 </table>
 
 
@@ -559,6 +569,30 @@ init event, step 3 of 4
 init event, step 4 of 4
 
 ![](figures/burnSummaries_io_init_InitMulti.png){width=100%}
+
+
+
+#### update\_tsf {-}
+
+mode = "single": every year (fireTimestep); first at start
+
+![](figures/burnSummaries_io_update_tsf.png){width=100%}
+
+
+
+#### save\_single {-}
+
+mode = "single": once, at start and at times set by summaryPeriod
+
+![](figures/burnSummaries_io_save_single.png){width=100%}
+
+
+
+#### create\_fireSizes {-}
+
+mode = "single": once, at end
+
+![](figures/burnSummaries_io_create_fireSizes.png){width=100%}
 
 
 
