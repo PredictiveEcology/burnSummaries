@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.1.0.9011"),
+  version = list(burnSummaries = "1.1.0.9012"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -26,8 +26,9 @@ defineModule(sim, list(
                   "FOR-CAST/fireregimetools@main (>= 0.1.0.9012)",
                   "ggplot2", "ggspatial", "googledrive", "patchwork",
                   "reproducible", "sf",
-                  ## dirnamesFromSet() (bare-number replicate folders), resolveSimYears(), padYears()
-                  "PredictiveEcology/SpaDES.core@development (>= 3.2.1.9057)",
+                  ## dirnamesFromSet() (bare-number replicate folders), resolveSimYears(), padYears();
+                  ## 3.2.1.9077: dirnamesFromSet() named by replicate id, repFiles(), tagReplicate()
+                  "PredictiveEcology/SpaDES.core@development (>= 3.2.1.9077)",
                   ## repair_geoms(): supplied fire polygons are repaired as fireregimetools repairs the download
                   "FOR-CAST/spatialutils@main",
                   "terra", "tidyterra"),
@@ -90,6 +91,10 @@ defineModule(sim, list(
                     "Human-readable name for the study area used - e.g., a hash of the study",
                     "area obtained using `reproducible::studyAreaName()`"),
     ## .seed is optional: `list('init' = 123)` will `set.seed(123)` for the `init` event only.
+    defineParameter(".rep", "integer", NA_integer_, NA, NA,
+                    paste("(single mode) the replicate this run is; `setupProject()` sets it from",
+                          "`.globals$.rep`. `NA` (the default): `reps` when it names one replicate, else",
+                          "the last `repNN` folder of `outputPath`.")),
     defineParameter(".seed", "list", list(), NA, NA,
                     "Named list of seeds to use for each event (names)."),
     defineParameter(".useCache", "logical", FALSE, NA, NA,
@@ -194,7 +199,7 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
       sim <- scheduleEvent(sim, time(sim) + P(sim)$fireTimestep, "burnSummaries", "update_tsf", 8)
     },
     create_fireSizes = {
-      repID <- repIDFromRun(P(sim)$reps, outputPath(sim))
+      repID <- repIDFromRun(P(sim)$.rep, P(sim)$reps, outputPath(sim))
       if (!is.null(sim[["burnSummary"]])) {
         fs <- copy(sim[["burnSummary"]])
         fs[, `:=`(
@@ -279,15 +284,18 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
 
 #' The replicate a single-mode run writes
 #'
-#' `reps` when it names one replicate, else the number in the last component of `path` named `rep` and
-#' digits (`.../rep07/` and `.../rep07/out` give 7). Through 1.1.0.9010 the pattern ran from the first
-#' `rep` and a digit to the end of the path, so `.../rep07/out` gave `NA`.
+#' The `.rep` parameter, which `setupProject()` sets; else `reps` when it names one replicate; else the
+#' number in the last component of `path` named `rep` and digits (`.../rep07/` and `.../rep07/out` give
+#' 7). Through 1.1.0.9010 the pattern ran from the first `rep` and a digit to the end of the path, so
+#' `.../rep07/out` gave `NA`.
 #'
+#' @param rep The `.rep` parameter.
 #' @param reps The `reps` parameter.
 #' @param path The run's `outputPath`.
 #'
-#' @return An integer; `NA` when neither names a replicate.
-repIDFromRun <- function(reps, path) {
+#' @return An integer; `NA` when none names a replicate.
+repIDFromRun <- function(rep, reps, path) {
+  if (length(rep) == 1L && !is.na(rep)) return(as.integer(rep))
   if (length(reps) == 1L) return(as.integer(reps))
   parts <- strsplit(gsub("\\\\", "/", path), "/", fixed = TRUE)[[1]]
   hit <- grep("^rep[0-9]+$", parts, value = TRUE)
@@ -394,11 +402,12 @@ InitMulti <- function(sim) {
   ## check for necessary output files -----------------------------------------------
   mod$useOutputs <- NROW(sim$outputsDF) > 0
   mod$outputFiles <- if (mod$useOutputs) unique(sim$outputsDF$file)
+  ## the replicate directories, named by replicate id: as they are named on disk (e.g. rep1 or rep01) from
+  ## `outputsDF`, else rep01, rep02, ... under outputPath(sim)
   mod$repDirs <- if (mod$useOutputs) {
-    ## the replicate directories as they are named on disk (e.g. rep1 or rep01)
     dirnamesFromSet(mod$outputFiles, P(sim)$reps, leafOnly = FALSE)
   } else {
-    file.path(outputPath(sim), sprintf("rep%02d", P(sim)$reps))
+    stats::setNames(file.path(outputPath(sim), sprintf("rep%02d", P(sim)$reps)), P(sim)$reps)
   }
   mod$allReps <- basename(mod$repDirs)
 
@@ -520,22 +529,6 @@ InitMulti <- function(sim) {
   # ! ----- STOP EDITING ----- ! #
 
   return(invisible(sim))
-}
-
-## The file `fname` in each replicate directory. With `files` (the files listed in `outputsDF`),
-## the directory and file name must match exactly, so that `rep1` does not also pick up `rep10`'s
-## files; without it, the path is built from the directory.
-repFiles <- function(repDirs, fname, files = NULL) {
-  if (is.null(files)) {
-    return(file.path(repDirs, fname))
-  }
-  vapply(repDirs, function(d) {
-    f <- files[dirname(files) == d & basename(files) == fname]
-    if (length(f) != 1L) {
-      stop("expected one ", fname, " in ", d, " in outputsDF; found ", length(f))
-    }
-    f
-  }, character(1), USE.NAMES = FALSE)
 }
 
 ## The historic fire record, with only a `YEAR` column: NBAC perimeters from `nbacStartYear` on, and
@@ -707,13 +700,10 @@ FireSummaries <- function(sim) {
 
   studyAreaName <- P(sim)$.studyAreaName
 
-  ## the replicate of each directory; each replicate's fire sizes are read from its own directory and
-  ## take its replicate from there (repFromDir()), not from what the single-mode run guessed
-  repIDs <- as.integer(sub("^\\D*", "", mod$allReps))
-  if (anyNA(repIDs)) {
-    stop("burnSummaries: replicate directories must end in their number (e.g. rep01); got ",
-         paste(mod$allReps[is.na(repIDs)], collapse = ", "))
-  }
+  ## the replicate of each directory (InitMulti() names `repDirs` by it); each replicate's fire sizes are
+  ## read from its own directory and take its replicate from there (SpaDES.core::tagReplicate()), not
+  ## from what the single-mode run guessed
+  repIDs <- as.integer(names(mod$repDirs))
 
   if (mod$useOutputs) {
     ## registerOutputs() records the CSV; the parquet partition is not registered, so
@@ -721,7 +711,7 @@ FireSummaries <- function(sim) {
     f_csvs <- repFiles(mod$repDirs, "burnSummaries_fireSizes.csv", mod$outputFiles)
     parts <- Map(function(f_fireSizes, id) {
       stopifnot(file.exists(f_fireSizes))
-      repFromDir(data.table::fread(f_fireSizes), id, f_fireSizes)
+      tagReplicate(data.table::fread(f_fireSizes), id, col = "rep", source = f_fireSizes)
     }, f_csvs, repIDs)
   } else {
     ## each replicate's fire-size parquet partition; open_burn_dataset() gives NULL for a replicate
@@ -729,7 +719,9 @@ FireSummaries <- function(sim) {
     roots <- file.path(mod$repDirs, "burnSummaries_fireSizes")
     parts <- Map(function(root, id) {
       ds <- fireregimetools::open_burn_dataset(root)
-      if (!is.null(ds)) repFromDir(data.table::as.data.table(dplyr::collect(ds)), id, root)
+      if (!is.null(ds)) {
+        tagReplicate(data.table::as.data.table(dplyr::collect(ds)), id, col = "rep", source = root)
+      }
     }, roots, repIDs)
   }
   parts <- Filter(Negate(is.null), unname(parts))
@@ -779,24 +771,6 @@ FireSummaries <- function(sim) {
   }
 
   return(invisible(sim))
-}
-
-## `fs`, one replicate's fire sizes read from `src`, with `rep` set to `id`, the replicate of the directory it
-## was read from. A row with no `rep` (a single-mode run that could not tell its replicate) takes `id`. A row
-## naming another replicate stops: that run was given the wrong `reps`, and its fires would otherwise count
-## for the replicate it named, while its own replicate looked fire-free.
-repFromDir <- function(fs, id, src) {
-  fs <- data.table::as.data.table(fs)
-  ## no `rep` column: NA. SpaDES.core's own `%||%` (SpaDES.core#530) also takes a length-0 left side as
-  ## missing; the two agree here, as `rep` has length 0 only in a table with no rows.
-  named <- suppressWarnings(as.integer(fs[["rep"]] %||% rep(NA_integer_, nrow(fs))))
-  other <- unique(named[!is.na(named) & named != id])
-  if (length(other)) {
-    stop("burnSummaries: the fire sizes in ", src, " are for replicate ", paste(other, collapse = ", "),
-         ", not ", id, ". Set `reps` to the replicate's number in single mode.")
-  }
-  data.table::set(fs, j = "rep", value = rep(as.integer(id), nrow(fs)))
-  fs
 }
 
 ## Stops when a fire-size year is not a number: as.numeric() would make it NA, and the fire would drop out of

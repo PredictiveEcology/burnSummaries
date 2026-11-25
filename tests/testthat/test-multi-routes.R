@@ -22,15 +22,22 @@ test_that("the CSV and parquet routes, and the order of the replicates, give the
   ## the stand-in's fire sizes and burn maps describe the same fires
   expect_no_warning(runMulti(out, reps = 1:2, plots = NA_character_), class = "burnSummariesBurnTotals")
   parquet <- multiTables(out)
-  runMulti(out, reps = 1:2, outputsDF = repOutputs(out, 1:2), plots = NA_character_)
+  csvSim <- runMulti(out, reps = 1:2, outputsDF = repOutputs(out, 1:2), plots = NA_character_)
   csv <- multiTables(out)
-  runMulti(out, reps = c(2L, 1L), plots = NA_character_)
+  reversedSim <- runMulti(out, reps = c(2L, 1L), plots = NA_character_)
   reversed <- multiTables(out)
 
   expect_identical(csv, parquet)
   expect_identical(reversed, parquet)
   sim <- parquet$regime[parquet$regime$source == "simulated", ]
   expect_identical(sim$nFires, c(4L, 0L)) ## one fire a year in replicate 1, none in 2
+
+  ## both routes name the replicate directories by replicate id, which the fire sizes are tagged with:
+  ## dirnamesFromSet() (outputsDF) in id order, the directory route in the order of `reps`
+  repDirsOf <- function(s) s@.xData$.modObjs$burnSummaries$repDirs
+  expect_identical(names(repDirsOf(csvSim)), c("1", "2"))
+  expect_identical(basename(unname(repDirsOf(csvSim))), c("rep01", "rep02"))
+  expect_identical(names(repDirsOf(reversedSim)), c("2", "1"))
 })
 
 test_that("fire sizes tagged with another replicate's number stop multi mode", {
@@ -38,7 +45,7 @@ test_that("fire sizes tagged with another replicate's number stop multi mode", {
   out <- file.path(testPaths$outputPath, "multi-wrongRep")
   ## a single-mode run in rep01 that was told it was replicate 2
   runSingleRep(file.path(out, "rep01"), rep = 2L, fires = TRUE, mods = mods)
-  expect_error(runMulti(out, reps = 1L, plots = NA_character_), "are for replicate 2, not 1")
+  expect_error(runMulti(out, reps = 1L, plots = NA_character_), "rows for replicate 2 in the outputs of replicate 1")
 })
 
 test_that("a burn map that does not match the fire sizes warns, naming the replicate", {
