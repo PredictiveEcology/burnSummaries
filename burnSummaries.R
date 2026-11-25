@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.1.0.9009"),
+  version = list(burnSummaries = "1.1.0.9010"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -186,8 +186,7 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
       }
     },
     update_tsf = {
-      sim$rstTimeSinceFire[] <- as.integer(sim$rstTimeSinceFire[]) + as.integer(P(sim)$fireTimestep) ## preserves NAs
-      sim$rstTimeSinceFire[which(sim$rstCurrentBurn[] == 1)] <- 0L
+      sim$rstTimeSinceFire[] <- updateTimeSinceFire(sim$rstTimeSinceFire[], sim$rstCurrentBurn[], P(sim)$fireTimestep)
 
       ## schedule next event, after the fire model's burn (see init)
       sim <- scheduleEvent(sim, time(sim) + P(sim)$fireTimestep, "burnSummaries", "update_tsf", 8)
@@ -284,6 +283,22 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
 }
 
 ## event functions ------------------------------------------------------------------
+
+#' Time since fire one fire timestep later
+#'
+#' Every cell ages by `step` years, and the cells burned this timestep (`burned` 1) read 0. `NA` cells
+#' (not flammable) stay `NA`.
+#'
+#' @param tsf Time since fire, one value per cell.
+#' @param burned The timestep's burn, one value per cell: 1 burned, 0 or `NA` not.
+#' @param step The `fireTimestep` parameter, in years.
+#'
+#' @return An integer vector of time since fire.
+updateTimeSinceFire <- function(tsf, burned, step) {
+  tsf <- as.integer(tsf) + as.integer(step)
+  tsf[which(burned == 1)] <- 0L
+  tsf
+}
 
 #' Times at which to summarise: `summaryPeriod` is in simulation times, so these are too
 #'
@@ -449,7 +464,7 @@ InitMulti <- function(sim) {
   ## already drops these from the downloaded record, but supplied polygons may hold them)
   hy <- P(sim)$historicYears
   firePolys <- firePolys[which(firePolys$YEAR > 0 & (anyNA(hy) | (firePolys$YEAR >= hy[1] & firePolys$YEAR <= hy[2]))), ]
-  recordYears <- historicRecordYears(firePolys, flammableMap, burnable, hy)
+  recordYears <- historicRecordYears(firePolys, hy)
   ## both maps at a cell of at least `minCellHa`; a burnable cell that no replicate burned has a rate of 0
   fact <- cellFactor(pixelSize, P(sim)$minCellHa)
   message(sprintf("  burn maps at %d x the %s m grid: cells of %s ha", fact, format(pixelSize[1]),
@@ -593,31 +608,26 @@ burnableCells <- function(flammableMap, studyArea = NULL, fireReturnInterval = N
 }
 
 ## The years of the observed record (multi mode): `historicYears` when it is set, else the first to the
-## last year with a fire in the burnable cells, inclusive. A year in that span with no fire there is a
-## year in which nothing burned, so the historic map is a rate per year, as the simulated one is.
+## last year of the record itself, inclusive: every dated fire of `firePolys` (the record on the grid's
+## extent, NBAC and the NFDB years before it), not only those in the burnable cells. A year in that span
+## with no fire is a year in which nothing burned, so the historic map is a rate per year of record, as
+## the fire cycle is the area burned over the length of the record (Li 2002, eq. 7).
 ## Through 1.1.0.9002 the divisor was the number of distinct years with a fire anywhere in the grid's
-## bounding box, which left fire-free years out and so overstated the rate where they are common.
-## `integer(0)` when `historicYears` is unset and no fire touches a burnable cell.
-historicRecordYears <- function(firePolys, flammableMap, burnable, historicYears = c(NA, NA)) {
+## bounding box, which left fire-free years out. Through 1.1.0.9009 the default span ran from the first
+## to the last fire in the burnable cells, which left out fire-free years at either end and so overstated
+## the rate, the more so the smaller the study area. `integer(0)` when `historicYears` is unset and the
+## record holds no dated fire.
+historicRecordYears <- function(firePolys, historicYears = c(NA, NA)) {
   if (!anyNA(historicYears)) {
     years <- seq(as.integer(historicYears[1]), as.integer(historicYears[2]))
   } else {
-    years <- integer(0)
-    if (nrow(firePolys) > 0L) {
-      yearIn <- function(fun) {
-        v <- terra::values(terra::rasterize(firePolys, flammableMap, field = "YEAR", fun = fun), mat = FALSE)
-        v[burnable]
-      }
-      firstByCell <- yearIn("min")
-      if (any(!is.na(firstByCell))) {
-        years <- seq(as.integer(min(firstByCell, na.rm = TRUE)), as.integer(max(yearIn("max"), na.rm = TRUE)))
-      }
-    }
+    dated <- firePolys$YEAR[which(firePolys$YEAR > 0)]
+    years <- if (length(dated)) seq(as.integer(min(dated)), as.integer(max(dated))) else integer(0)
   }
   if (length(years)) {
     message(sprintf("  historic record %d-%d (%d years)", min(years), max(years), length(years)))
   } else {
-    message("  historic record: no fire in the burnable cells; the historic burn map is 0 there")
+    message("  historic record: no dated fire; the historic burn map is 0")
   }
   years
 }
@@ -720,15 +730,17 @@ FireSummaries <- function(sim) {
   ## TODO: add this file to list of outputs
   sim <- registerOutputs(f_out, sim)
 
-  ## the fire regime per replicate and observed, and the fire per block of `summaryInterval` years
+  ## the fire regime per replicate and observed, and the fire per block of `summaryInterval` years, counted
+  ## in fires, not in the rows of `fireSizes`: LandMine records some fires as several rows (firesFromPieces())
+  mod$fires <- firesFromPieces(sim$fireSizes)
   pixelHa <- prod(mod$pixelSize) / 10^4
   repIDs <- as.integer(sub("^\\D*", "", mod$allReps))
   mod$fireRegime <- rbind(
-    simulatedFireRegime(sim$fireSizes, repIDs, P(sim)$simTimes, pixelHa,
+    simulatedFireRegime(mod$fires, repIDs, P(sim)$simTimes, pixelHa,
                         resolveRegimePeriod(P(sim)$regimePeriod, P(sim)$simTimes)),
     observedFireRegime(mod$firePolys, mod$meanAnnualCumulBurnMapHistoric, mod$burnableMap, mod$recordYears)
   )
-  mod$fireBlocks <- fireBlockTable(sim$fireSizes, repIDs, P(sim)$simTimes, P(sim)$summaryInterval, pixelHa)
+  mod$fireBlocks <- fireBlockTable(mod$fires, repIDs, P(sim)$simTimes, P(sim)$summaryInterval, pixelHa)
   for (x in c("fireRegime", "fireBlocks")) {
     f <- file.path(outputPath(sim), paste0("burnSummaries_", x, ".csv"))
     data.table::fwrite(mod[[x]], f)
@@ -736,6 +748,27 @@ FireSummaries <- function(sim) {
   }
 
   return(invisible(sim))
+}
+
+## One row per fire from the rows of `fireSizes`. LandMine (>= 1.0.13) records a fire that stalls in the
+## second phase of its reburns as several rows: what burned, then the shortfall ignited again from new
+## start cells, all sharing the fire's `fireID` and original `targetSize`. `fireID` is issued per burn
+## year, so (rep, year, fireID) identifies one fire, and its pieces need not be contiguous. Those rows
+## are summed into one fire (`simSize`, `expSize`), keeping `targetSize`, with `nPieces` rows. A row
+## with no `fireID` (scfm, fireSense, LandMine before 1.0.13) is one fire. Fires of size 0 are kept;
+## the tables leave them out.
+firesFromPieces <- function(fireSizes) {
+  dt <- data.table::copy(data.table::as.data.table(fireSizes)) ## the columns are converted below, by reference
+  for (col in c("fireID", "targetSize", "expSize")) {
+    if (!col %in% names(dt)) data.table::set(dt, j = col, value = NA_real_)
+  }
+  dt[, `:=`(simSize = as.numeric(simSize), expSize = as.numeric(expSize), targetSize = as.numeric(targetSize))]
+  keys <- c(intersect(c("simArea", "rep"), names(dt)), "year", "fireID")
+  pieces <- dt[!is.na(fireID), list(simSize = sum(simSize), expSize = sum(expSize),
+                                    targetSize = targetSize[1], nPieces = .N), by = keys]
+  whole <- dt[is.na(fireID), c(keys, "simSize", "expSize", "targetSize"), with = FALSE]
+  whole[, nPieces := 1L]
+  data.table::rbindlist(list(pieces, whole), use.names = TRUE)
 }
 
 ## The years the simulated fire regime covers: `regimePeriod` when set, else the whole run, `simTimes`.
@@ -888,13 +921,18 @@ plotFun <- function(sim) {
   ## fire size histograms w/ median fire sizes
   pixelSizeHa <- prod(mod$pixelSize) / 10^4
 
-  subsetDT <- sim$fireSizes[simArea == studyAreaName & (expSize > 0 | simSize > 0), ]
+  ## one row per fire, its pieces summed (firesFromPieces())
+  subsetDT <- mod$fires[simArea == studyAreaName & (simSize > 0 | targetSize > 0), ]
 
-  ## scfm and fireSense don't set target fire sizes, but LandMine does
-  fireModelUsesTargetSize <- isFALSE(all(is.na(subsetDT$expSize)))
+  ## LandMine draws a target size for each fire (`targetSize`, LandMine >= 1.0.13); scfm and fireSense set
+  ## none. LandMine's `expSize` (its `maxSize`) is not used as the expected size: its reburns rewrite it to
+  ## what burned, so it equals `simSize` by construction and the plots could show no shortfall.
+  fireModelUsesTargetSize <- isFALSE(all(is.na(subsetDT$targetSize)))
 
   if (isTRUE(fireModelUsesTargetSize)) {
-    subsetDT[, expSizeHa := expSize * pixelSizeHa]
+    subsetDT[, expSizeHa := targetSize * pixelSizeHa]
+  } else if (isFALSE(all(is.na(subsetDT$expSize)))) {
+    message("no target fire sizes (`targetSize`, LandMine >= 1.0.13); skipping the expected fire-size plots")
   }
 
   subsetDT[, simSizeHa := simSize * pixelSizeHa]

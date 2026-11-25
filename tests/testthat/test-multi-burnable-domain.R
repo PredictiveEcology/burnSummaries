@@ -84,22 +84,24 @@ test_that("both burn maps cover only the burnable cells: in the study area, with
   expect_identical(maps$historic[6], 0)
 })
 
-test_that("the historic rate divides by the record's span in the burnable cells", {
+test_that("the historic rate divides by the span of the whole record, fire-free years included", {
   maps <- runMultiDomain(
     file.path(testPaths$outputPath, "multi-span"),
     list(studyArea = domainStudyArea(), fireReturnInterval = domainFRI())
   )
-  ## 1961-2000: 40 years, fire-free ones included. Not the 4 years with a fire in these cells, nor the
-  ## 8 in the bounding box, nor its 1940-2010 span.
-  expect_equal(maps$historic[burnable], c(2, 1, 1, 0) / 40, tolerance = 1e-6)
-  expect_match(maps$messages, "historic record 1961-2000 \\(40 years\\)", all = FALSE)
+  ## The record on the grid runs 1940-2010: 71 years, fire-free ones included. Not the 4 years with a
+  ## fire in the burnable cells, nor the 8 distinct fire years, nor 1961-2000, the first to the last
+  ## fire in the burnable cells (the default through 1.1.0.9009), which leaves out fire-free years at
+  ## either end of the record.
+  expect_equal(maps$historic[burnable], c(2, 1, 1, 0) / 71, tolerance = 1e-6)
+  expect_match(maps$messages, "historic record 1940-2010 \\(71 years\\)", all = FALSE)
 })
 
 test_that("without studyArea or fireReturnInterval the maps cover every flammable cell, and say so", {
   maps <- runMultiDomain(file.path(testPaths$outputPath, "multi-noDomain"))
   expect_identical(which(!is.na(maps$historic)), 1:7)
   expect_identical(which(!is.na(maps$simulated)), 1:7)
-  ## the record in the flammable cells runs 1940-2010 (cell 7); cell 8's 1950 fire is left out
+  ## the record runs 1940-2010; cell 8 is not flammable, so its 1950 fire is in no map
   expect_equal(maps$historic[1:7], c(2, 1, 1, 0, 1, 0, 2) / 71, tolerance = 1e-6)
   expect_equal(maps$simulated[1:7], c(4, 2, 4, 4, 0, 1, 4) / 4, tolerance = 1e-6)
   expect_match(maps$messages, "historic record 1940-2010 \\(71 years\\)", all = FALSE)
@@ -142,11 +144,11 @@ test_that("supplied firePolys replace the download, on the burnable cells, witho
     file.path(testPaths$outputPath, "multi-supplied"),
     list(studyArea = domainStudyArea(), fireReturnInterval = domainFRI(), firePolys = supplied)
   )
-  ## the record in the burnable cells runs 1990-1995 (6 years); cell 6's undated fire is dropped and
-  ## cell 7 is outside the study area
-  expect_equal(maps$historic[burnable], c(1, 0, 1, 0) / 6, tolerance = 1e-6)
+  ## the supplied record runs 1990-2000 (11 years); cell 6's undated fire is dropped, and cell 7's 2000
+  ## fire, outside the study area, is in no map but is part of the record
+  expect_equal(maps$historic[burnable], c(1, 0, 1, 0) / 11, tolerance = 1e-6)
   expect_identical(which(!is.na(maps$historic)), burnable)
-  expect_match(maps$messages, "historic record 1990-1995 \\(6 years\\)", all = FALSE)
+  expect_match(maps$messages, "historic record 1990-2000 \\(11 years\\)", all = FALSE)
   ## nothing was fetched
   expect_false(any(grepl("NBAC perimeters", maps$messages)))
 })
@@ -159,8 +161,8 @@ test_that("supplied firePolys in another CRS give the same historic map", {
     file.path(testPaths$outputPath, "multi-supplied-crs"),
     list(studyArea = domainStudyArea(), fireReturnInterval = domainFRI(), firePolys = supplied)
   )
-  expect_equal(maps$historic[burnable], c(1, 0, 1, 0) / 6, tolerance = 1e-6)
-  expect_match(maps$messages, "historic record 1990-1995 \\(6 years\\)", all = FALSE)
+  expect_equal(maps$historic[burnable], c(1, 0, 1, 0) / 11, tolerance = 1e-6)
+  expect_match(maps$messages, "historic record 1990-2000 \\(11 years\\)", all = FALSE)
 })
 
 test_that("the observed fire count is of fires on the burnable cells", {

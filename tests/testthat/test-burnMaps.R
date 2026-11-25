@@ -22,7 +22,7 @@ test_that("historic mean annual burn divides by the record length, not the years
   )
   polys$YEAR <- c(2000L, 2009L)
   burnable <- rep(TRUE, 4)
-  yrs <- suppressMessages(historicRecordYears(polys, flammable, burnable))
+  yrs <- suppressMessages(historicRecordYears(polys))
   expect_identical(yrs, 2000:2009)
   mm <- historicBurnMap(polys, flammable, burnable, yrs)
   ## a burnable cell with no recorded fire has a rate of 0
@@ -34,7 +34,7 @@ test_that("historicYears sets the record length, so a record with fireless end y
   polys <- terra::vect("POLYGON ((0 1, 1 1, 1 2, 0 2, 0 1))", crs = "EPSG:3857")
   polys$YEAR <- 2000L
   burnable <- rep(TRUE, 4)
-  yrs <- suppressMessages(historicRecordYears(polys, flammable, burnable, c(1991L, 2010L)))
+  yrs <- suppressMessages(historicRecordYears(polys, c(1991L, 2010L)))
   expect_identical(yrs, 1991:2010)
   mm <- historicBurnMap(polys, flammable, burnable, yrs)
   expect_equal(max(terra::values(mm), na.rm = TRUE), 1 / 20)
