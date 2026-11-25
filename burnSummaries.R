@@ -149,7 +149,7 @@ defineModule(sim, list(
 ## event types
 #   - type `init` is required for initialization
 
-doEvent.burnSummaries = function(sim, eventTime, eventType) {
+doEvent.burnSummaries <- function(sim, eventTime, eventType) {
   switch(
     eventType,
     init = {
