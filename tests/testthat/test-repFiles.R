@@ -4,7 +4,8 @@ test_that("repFiles() matches each replicate directory and file name exactly", {
   ## other years' maps, and files in a replicate's subfolders (as outputs(sim) lists them)
   files <- c(files, "out/rep1/burnMap_year0500.tif", "out/rep1/figures/burnMap_year1000.tif")
   repDirs <- dirnamesFromSet(files, 1:10, leafOnly = FALSE)
-  expect_identical(repDirs, file.path("out", c("rep1", "rep2", "rep10")))
+  ## unname(): SpaDES.core >= 3.2.1.9077 names the result by replicate id
+  expect_identical(unname(repDirs), file.path("out", c("rep1", "rep2", "rep10")))
 
   ## rep1 does not pick up rep10's files, other years' maps or files in subfolders
   expect_identical(repFiles(repDirs, "burnMap_year1000.tif", files),
