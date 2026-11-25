@@ -50,15 +50,20 @@ runMultiDomain <- function(out, objects = list(), params = list()) {
     fetch_nfdb_polys = function(...) fires$nfdb,
     .package = "fireregimetools"
   )
-  msgs <- testthat::capture_messages(SpaDES.core::simInitAndSpades(
-    times = list(start = 0, end = 4),
-    params = list(burnSummaries = utils::modifyList(list(
-      mode = "multi", reps = 1L, simTimes = c(0, 4), summaryPeriod = c(2L, 4L),
-      summaryInterval = 1L, minCellHa = 1, .studyAreaName = "test", .plots = NA_character_
-    ), params)),
-    modules = "burnSummaries",
-    objects = objects,
-    paths = utils::modifyList(testPaths, list(outputPath = out))
+  ## the replicate's burn map is written by hand, with no fire sizes to match it, so the check that the two
+  ## agree (checkBurnTotals()) is muffled here; these tests are about the maps
+  msgs <- testthat::capture_messages(withCallingHandlers(
+    SpaDES.core::simInitAndSpades(
+      times = list(start = 0, end = 4),
+      params = list(burnSummaries = utils::modifyList(list(
+        mode = "multi", reps = 1L, simTimes = c(0, 4), summaryPeriod = c(2L, 4L),
+        summaryInterval = 1L, minCellHa = 1, .studyAreaName = "test", .plots = NA_character_
+      ), params)),
+      modules = "burnSummaries",
+      objects = objects,
+      paths = utils::modifyList(testPaths, list(outputPath = out))
+    ),
+    burnSummariesBurnTotals = function(w) invokeRestart("muffleWarning")
   ))
   readMap <- function(f) {
     f <- file.path(out, f)
