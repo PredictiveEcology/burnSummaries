@@ -38,7 +38,7 @@ test_that("fire sizes tagged with another replicate's number stop multi mode", {
   out <- file.path(testPaths$outputPath, "multi-wrongRep")
   ## a single-mode run in rep01 that was told it was replicate 2
   runSingleRep(file.path(out, "rep01"), rep = 2L, fires = TRUE, mods = mods)
-  expect_error(runMulti(out, reps = 1L, plots = NA_character_), "are for replicate 2, not 1")
+  expect_error(runMulti(out, reps = 1L, plots = NA_character_), "rows for replicate 2 in the outputs of replicate 1")
 })
 
 test_that("a burn map that does not match the fire sizes warns, naming the replicate", {

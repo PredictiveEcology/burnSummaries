@@ -1,25 +1,15 @@
-## Checks that turn a silent loss into an error or a warning: a replicate's fire sizes counted for another
+## Checks that turn a silent loss into an error or a warning: a single-mode run that cannot tell its
 ## replicate, a fire whose year is not a number, areas on a grid that is not in metres, and fire sizes that
 ## do not add up to the burns on the burn map.
 
-test_that("the replicate comes from `reps` when it names one, else the last repNN in the path", {
-  expect_identical(repIDFromRun(3L, "/out/rep07"), 3L)
-  expect_identical(repIDFromRun(1:10, "/out/sa/mainSim/rep07"), 7L)
-  expect_identical(repIDFromRun(1:10, "/out/rep07/sub"), 7L) ## NA through 1.1.0.9010
-  expect_identical(repIDFromRun(1:10, "/out/rep2023/rep07"), 7L)
-  expect_identical(repIDFromRun(1:10, "C:\\out\\rep12"), 12L)
-  expect_identical(repIDFromRun(1:10, "/out/representative"), NA_integer_)
-})
-
-test_that("each replicate's fire sizes take the replicate of the directory they were read from", {
-  expect_identical(repFromDir(data.frame(rep = c(NA, NA), year = c("1", "2"), simSize = 1:2), 3L, "x")$rep,
-                   c(3L, 3L))
-  expect_identical(repFromDir(data.frame(year = "1", simSize = 1L), 3L, "x")$rep, 3L)
-  expect_identical(repFromDir(data.frame(rep = 3L, year = "1", simSize = 1L), 3L, "x")$rep, 3L)
-  expect_error(
-    repFromDir(data.frame(rep = c(3L, 1L), year = c("1", "2"), simSize = 1:2), 3L, "rep03/fs.csv"),
-    "rep03/fs.csv are for replicate 1, not 3"
-  )
+test_that("the replicate comes from `.rep`, else `reps` when it names one, else the last repNN in the path", {
+  expect_identical(repIDFromRun(5L, 3L, "/out/rep07"), 5L)
+  expect_identical(repIDFromRun(NA_integer_, 3L, "/out/rep07"), 3L)
+  expect_identical(repIDFromRun(NA_integer_, 1:10, "/out/sa/mainSim/rep07"), 7L)
+  expect_identical(repIDFromRun(NA_integer_, 1:10, "/out/rep07/sub"), 7L) ## NA through 1.1.0.9010
+  expect_identical(repIDFromRun(NA_integer_, 1:10, "/out/rep2023/rep07"), 7L)
+  expect_identical(repIDFromRun(NA_integer_, 1:10, "C:\\out\\rep12"), 12L)
+  expect_identical(repIDFromRun(NA_integer_, 1:10, "/out/representative"), NA_integer_)
 })
 
 test_that("a fire-size year that is missing or not a number stops", {

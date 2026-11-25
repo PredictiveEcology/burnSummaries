@@ -6,6 +6,16 @@
   generated from the code (needs SpaDES.core 3.2.1.9068 or later; older versions leave them out).
 * The README defines each fire-regime metric the module reports, with references.
 
+## Replicates from SpaDES.core; `.rep` (`1.1.0.9012`)
+
+* New parameter `.rep` (single mode): the replicate this run is, as `setupProject()` sets it in
+  `.globals$.rep`. When it is `NA` (the default), the replicate is `reps` if it names one, else the last
+  `repNN` folder of `outputPath`, as before.
+* Multi mode uses SpaDES.core's replicate helpers (SpaDES.core >= 3.2.1.9075): the replicate numbers are the
+  names of `dirnamesFromSet()`'s result, each replicate's files come from `repFiles()`, and each replicate's
+  fire sizes are tagged with `tagReplicate()`. The module's own copies are gone; the behaviour is the same,
+  except that a replicate directory whose name does not end in its number no longer stops multi mode.
+
 ## Errors and warnings instead of silent losses (`1.1.0.9011`)
 
 * Multi mode tags each replicate's fire sizes with the replicate of the directory they were read from. Rows

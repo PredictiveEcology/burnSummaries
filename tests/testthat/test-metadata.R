@@ -53,7 +53,7 @@ test_that("parameters are the expected names", {
   expect_identical(
     sort(md$parameters$paramName),
     c(
-      ".plotInitialTime", ".plotInterval", ".plots", ".saveInitialTime",
+      ".plotInitialTime", ".plotInterval", ".plots", ".rep", ".saveInitialTime",
       ".saveInterval", ".seed", ".studyAreaName", ".useCache", "dataYear", "fireCauses",
       "fireTimestep", "historicYears", "minCellHa", "mode", "nbacStartYear", "regimePeriod", "reps", "simOutputPath", "simTimes", "summaryInterval",
       "summaryPeriod"
