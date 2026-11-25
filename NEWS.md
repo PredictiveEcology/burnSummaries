@@ -4,6 +4,24 @@
 
 * The README shows the module's events, the objects each reads and writes, and a figure per event,
   generated from the code (needs SpaDES.core 3.2.1.9068 or later; older versions leave them out).
+* The README defines each fire-regime metric the module reports, with references.
+
+## Fires counted whole; the observed record's full span (`1.1.0.9010`)
+
+* The fire regime and fire per block tables, and the fire-size figures, count fires, not rows of
+  `fireSizes`. LandMine (>= 1.0.13) records a fire that stalls in the second phase of its reburns as
+  several rows sharing (rep, year, `fireID`); each counted as a fire, so the number of fires was too
+  high and the largest fire was the largest piece. A row with no `fireID` (scfm, fireSense) is one fire.
+  Area burned is unchanged.
+* The expected fire sizes in `expected_number_size_fires.png` and the expected-against-simulated plots
+  are LandMine's `targetSize`, compared with each fire's summed size. `expSize` (LandMine's `maxSize`)
+  equals the burned size by construction, so those plots could not show a fire that fell short. Without
+  `targetSize` (LandMine before 1.0.13) the expected-size plots are skipped, with a message.
+* With `historicYears` unset, the observed record's years are the first to the last year of the record
+  itself (NBAC, and the NFDB years before it, on the grid's extent), not the first to the last year with a
+  fire in the burnable cells. Fire-free years at either end of the record count, as the fire cycle is the
+  area burned over the length of the record; leaving them out overstated the observed rate, more so in a
+  small study area. Runs that set `historicYears` are unchanged.
 
 ## Burn maps at cells of at least 100 ha; observed fires by cause (`1.1.0.9007` to `1.1.0.9009`)
 
