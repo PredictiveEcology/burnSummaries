@@ -6,6 +6,23 @@
   generated from the code (needs SpaDES.core 3.2.1.9068 or later; older versions leave them out).
 * The README defines each fire-regime metric the module reports, with references.
 
+## Errors and warnings instead of silent losses (`1.1.0.9011`)
+
+* Multi mode tags each replicate's fire sizes with the replicate of the directory they were read from. Rows
+  with no replicate take it; rows naming another replicate stop, as a single-mode run given the wrong `reps`
+  would otherwise have its fires counted for that replicate and its own look fire-free.
+* Single mode finds its replicate in the last `repNN` component of `outputPath` when `reps` does not name one.
+  The old pattern ran from the first `rep` and a digit to the end of the path, so `.../rep07/out` gave `NA`.
+* A fire-size year that is missing or not a number stops multi mode; it used to drop the fire from every table.
+* Multi mode stops when the flammable map is not on a projected grid in metres (lon/lat, feet, or no CRS):
+  areas are cell counts times the cell size, taken as metres.
+* Multi mode warns (class `burnSummariesBurnTotals`) when a replicate's fire sizes do not add up to the burns on
+  its burn map: the tables use the one and the maps the other.
+* Supplied `firePolys` are repaired with `spatialutils::repair_geoms()`, as fireregimetools repairs the
+  downloaded record. An invalid polygon of no area was in no map but counted as a fire. A `YEAR` given as text
+  is read as a number, and the log counts the polygons left out for having no year.
+* `stringr` is no longer a dependency; `spatialutils` is.
+
 ## Fires counted whole; the observed record's full span (`1.1.0.9010`)
 
 * The fire regime and fire per block tables, and the fire-size figures, count fires, not rows of

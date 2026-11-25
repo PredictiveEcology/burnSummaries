@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "1.1.0.9010"),
+  version = list(burnSummaries = "1.1.0.9011"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -28,7 +28,9 @@ defineModule(sim, list(
                   "reproducible", "sf",
                   ## dirnamesFromSet() (bare-number replicate folders), resolveSimYears(), padYears()
                   "PredictiveEcology/SpaDES.core@development (>= 3.2.1.9057)",
-                  "stringr", "terra", "tidyterra"),
+                  ## repair_geoms(): supplied fire polygons are repaired as fireregimetools repairs the download
+                  "FOR-CAST/spatialutils@main",
+                  "terra", "tidyterra"),
   parameters = bindrows(
     defineParameter("dataYear", "numeric", 2020, NA, NA,
                     "data year for the SCANFI stand-age inputs used to seed rstTimeSinceFire (single mode)"),
@@ -192,16 +194,7 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
       sim <- scheduleEvent(sim, time(sim) + P(sim)$fireTimestep, "burnSummaries", "update_tsf", 8)
     },
     create_fireSizes = {
-      ## try to guess the replicate being run
-      if (length(P(sim)$reps) == 1) {
-        repID <- P(sim)$reps
-      } else if (grepl("rep", outputPath(sim))) {
-        repID <- stringr::str_extract(outputPath(sim), "rep[0-9].*") |>
-          stringr::str_remove("rep") |>
-          as.integer()
-      } else {
-        repID <- NA_integer_
-      }
+      repID <- repIDFromRun(P(sim)$reps, outputPath(sim))
       if (!is.null(sim[["burnSummary"]])) {
         fs <- copy(sim[["burnSummary"]])
         fs[, `:=`(
@@ -283,6 +276,23 @@ doEvent.burnSummaries = function(sim, eventTime, eventType) {
 }
 
 ## event functions ------------------------------------------------------------------
+
+#' The replicate a single-mode run writes
+#'
+#' `reps` when it names one replicate, else the number in the last component of `path` named `rep` and
+#' digits (`.../rep07/` and `.../rep07/out` give 7). Through 1.1.0.9010 the pattern ran from the first
+#' `rep` and a digit to the end of the path, so `.../rep07/out` gave `NA`.
+#'
+#' @param reps The `reps` parameter.
+#' @param path The run's `outputPath`.
+#'
+#' @return An integer; `NA` when neither names a replicate.
+repIDFromRun <- function(reps, path) {
+  if (length(reps) == 1L) return(as.integer(reps))
+  parts <- strsplit(gsub("\\\\", "/", path), "/", fixed = TRUE)[[1]]
+  hit <- grep("^rep[0-9]+$", parts, value = TRUE)
+  if (length(hit)) as.integer(sub("^rep", "", hit[length(hit)])) else NA_integer_
+}
 
 #' Time since fire one fire timestep later
 #'
@@ -402,10 +412,11 @@ InitMulti <- function(sim) {
   stopifnot(file.exists(flm))
 
   flammableMap <- terra::rast(flm)
+  checkMetreGrid(flammableMap) ## areas below are cell counts times the cell size in m
   pixelSize <- terra::res(flammableMap) ## keep both x and y dimensions
 
   fbms <- repFiles(mod$repDirs, paste0("burnMap_year", pad$end, ".tif"), mod$outputFiles)
-  burnMaps <- Map(rep = mod$allReps, fbm = fbms, function(rep, fbm) {
+  burnReps <- Map(rep = mod$allReps, fbm = fbms, function(rep, fbm) {
     message(paste("Loading burn maps for rep", rep, "..."))
 
     stopifnot(file.exists(fbm))
@@ -415,9 +426,12 @@ InitMulti <- function(sim) {
     ## sanity check
     terra::compareGeom(cumulBurnMap, flammableMap, res = TRUE)
 
-    ## mean annual cumulative burn map
-    cumulBurnMap / (P(sim)$simTimes[2] - P(sim)$simTimes[1])
-  }) |>
+    ## the mean annual cumulative burn map, and the burns it counts, to check against the fire sizes
+    list(rate = cumulBurnMap / (P(sim)$simTimes[2] - P(sim)$simTimes[1]),
+         total = sum(terra::values(cumulBurnMap, mat = FALSE), na.rm = TRUE))
+  })
+  mod$burnMapTotals <- vapply(burnReps, `[[`, numeric(1), "total")
+  burnMaps <- lapply(burnReps, `[[`, "rate") |>
     terra::rast() |>
     terra::app(sum, na.rm = TRUE)
 
@@ -428,11 +442,14 @@ InitMulti <- function(sim) {
   burnable <- burnableCells(flammableMap, sim$studyArea, sim$fireReturnInterval)
 
   firePolys <- if (exists("firePolys", envir(sim))) {
-    ## polygons supplied on the simList: use them rather than re-fetching, projected and cropped to
-    ## the grid as the download is. rasterize() counts no cell of a polygon in another CRS, silently.
+    ## polygons supplied on the simList: use them rather than re-fetching, repaired, projected and
+    ## cropped to the grid as the download is. rasterize() counts no cell of a polygon in another CRS,
+    ## silently. An invalid polygon of no area rasterizes to no cell but extract() gives it cells, so
+    ## unrepaired it was in no map yet counted as a fire; repair_geoms() drops it.
     sim$firePolys |>
       tidyterra::bind_spat_rows() |>
-      tidyterra::mutate(YEAR = as.integer(YEAR)) |>
+      spatialutils::repair_geoms() |>
+      tidyterra::mutate(YEAR = suppressWarnings(as.integer(YEAR))) |> ## a YEAR that is no number is undated
       terra::project(terra::crs(flammableMap)) |>
       terra::crop(terra::ext(flammableMap)) |>
       fireregimetools::filter_fire_records(P(sim)$fireCauses, "nbac")
@@ -463,6 +480,8 @@ InitMulti <- function(sim) {
   ## the `historicYears` window, and no undated fire (`YEAR` 0, -9999 or missing; historicFirePolys()
   ## already drops these from the downloaded record, but supplied polygons may hold them)
   hy <- P(sim)$historicYears
+  undated <- sum(!(firePolys$YEAR > 0), na.rm = TRUE) + sum(is.na(firePolys$YEAR))
+  if (undated > 0L) message(sprintf("  %d fire polygon(s) with no year left out of the observed record", undated))
   firePolys <- firePolys[which(firePolys$YEAR > 0 & (anyNA(hy) | (firePolys$YEAR >= hy[1] & firePolys$YEAR <= hy[2]))), ]
   recordYears <- historicRecordYears(firePolys, hy)
   ## both maps at a cell of at least `minCellHa`; a burnable cell that no replicate burned has a rate of 0
@@ -688,41 +707,54 @@ FireSummaries <- function(sim) {
 
   studyAreaName <- P(sim)$.studyAreaName
 
+  ## the replicate of each directory; each replicate's fire sizes are read from its own directory and
+  ## take its replicate from there (repFromDir()), not from what the single-mode run guessed
+  repIDs <- as.integer(sub("^\\D*", "", mod$allReps))
+  if (anyNA(repIDs)) {
+    stop("burnSummaries: replicate directories must end in their number (e.g. rep01); got ",
+         paste(mod$allReps[is.na(repIDs)], collapse = ", "))
+  }
+
   if (mod$useOutputs) {
     ## registerOutputs() records the CSV; the parquet partition is not registered, so
     ## outputs(sim) is what drives this arm.
     f_csvs <- repFiles(mod$repDirs, "burnSummaries_fireSizes.csv", mod$outputFiles)
-    sim$fireSizes <- lapply(f_csvs, function(f_fireSizes) {
+    parts <- Map(function(f_fireSizes, id) {
       stopifnot(file.exists(f_fireSizes))
-
-      data.table::fread(f_fireSizes)
-    }) |>
-      data.table::rbindlist()
+      repFromDir(data.table::fread(f_fireSizes), id, f_fireSizes)
+    }, f_csvs, repIDs)
   } else {
-    ## read every replicate's fire-size parquet partition as one lazy Arrow dataset;
-    ## open_burn_dataset() skips reps with no fires / missing output rather than erroring.
+    ## each replicate's fire-size parquet partition; open_burn_dataset() gives NULL for a replicate
+    ## with no fires (write_burn_parquet() skips an empty table) or no output
     roots <- file.path(mod$repDirs, "burnSummaries_fireSizes")
-    ds <- fireregimetools::open_burn_dataset(roots)
-    sim$fireSizes <- if (is.null(ds)) {
-      ## No replicate had a fire, so none wrote a parquet (write_burn_parquet() skips an empty
-      ## table) and there is no schema to read. A table with no columns wrote an empty CSV and
-      ## stopped plotFun() at `simArea`, so give it the columns and types a replicate with
-      ## LandMine fires reads back: create_fireSizes' columns, plus the parquet's `replicate`.
-      data.table::data.table(
-        simArea = character(0),
-        rep = integer(0),
-        year = character(0),
-        simSize = integer(0),
-        expSize = integer(0),
-        fireID = integer(0),
-        attempt = integer(0),
-        targetSize = numeric(0),
-        replicate = integer(0)
-      )
-    } else {
-      data.table::as.data.table(dplyr::collect(ds))
-    }
+    parts <- Map(function(root, id) {
+      ds <- fireregimetools::open_burn_dataset(root)
+      if (!is.null(ds)) repFromDir(data.table::as.data.table(dplyr::collect(ds)), id, root)
+    }, roots, repIDs)
   }
+  parts <- Filter(Negate(is.null), unname(parts))
+  sim$fireSizes <- if (length(parts) == 0L) {
+    ## No replicate had a fire, so none wrote a parquet and there is no schema to read. A table with
+    ## no columns wrote an empty CSV and stopped plotFun() at `simArea`, so give it the columns and
+    ## types a replicate with LandMine fires reads back: create_fireSizes' columns, plus the
+    ## parquet's `replicate`.
+    data.table::data.table(
+      simArea = character(0),
+      rep = integer(0),
+      year = character(0),
+      simSize = integer(0),
+      expSize = integer(0),
+      fireID = integer(0),
+      attempt = integer(0),
+      targetSize = numeric(0),
+      replicate = integer(0)
+    )
+  } else {
+    data.table::rbindlist(parts, use.names = TRUE, fill = TRUE)
+  }
+  checkFireYears(sim$fireSizes$year)
+  ## each replicate's fire sizes against its burn map; the tables use the one, the maps the other
+  checkBurnTotals(sim$fireSizes, stats::setNames(mod$burnMapTotals, repIDs))
 
   f_out <- file.path(outputPath(sim), paste0("burnSummaries_fireSizes_allReps.csv"))
   data.table::fwrite(sim$fireSizes, f_out)
@@ -734,7 +766,6 @@ FireSummaries <- function(sim) {
   ## in fires, not in the rows of `fireSizes`: LandMine records some fires as several rows (firesFromPieces())
   mod$fires <- firesFromPieces(sim$fireSizes)
   pixelHa <- prod(mod$pixelSize) / 10^4
-  repIDs <- as.integer(sub("^\\D*", "", mod$allReps))
   mod$fireRegime <- rbind(
     simulatedFireRegime(mod$fires, repIDs, P(sim)$simTimes, pixelHa,
                         resolveRegimePeriod(P(sim)$regimePeriod, P(sim)$simTimes)),
@@ -748,6 +779,71 @@ FireSummaries <- function(sim) {
   }
 
   return(invisible(sim))
+}
+
+## `fs`, one replicate's fire sizes read from `src`, with `rep` set to `id`, the replicate of the directory it
+## was read from. A row with no `rep` (a single-mode run that could not tell its replicate) takes `id`. A row
+## naming another replicate stops: that run was given the wrong `reps`, and its fires would otherwise count
+## for the replicate it named, while its own replicate looked fire-free.
+repFromDir <- function(fs, id, src) {
+  fs <- data.table::as.data.table(fs)
+  ## no `rep` column: NA. SpaDES.core's own `%||%` (SpaDES.core#530) also takes a length-0 left side as
+  ## missing; the two agree here, as `rep` has length 0 only in a table with no rows.
+  named <- suppressWarnings(as.integer(fs[["rep"]] %||% rep(NA_integer_, nrow(fs))))
+  other <- unique(named[!is.na(named) & named != id])
+  if (length(other)) {
+    stop("burnSummaries: the fire sizes in ", src, " are for replicate ", paste(other, collapse = ", "),
+         ", not ", id, ". Set `reps` to the replicate's number in single mode.")
+  }
+  data.table::set(fs, j = "rep", value = rep(as.integer(id), nrow(fs)))
+  fs
+}
+
+## Stops when a fire-size year is not a number: as.numeric() would make it NA, and the fire would drop out of
+## every table silently.
+checkFireYears <- function(year) {
+  bad <- !is.na(year) & is.na(suppressWarnings(as.numeric(year)))
+  if (any(is.na(year)) || any(bad)) {
+    stop("burnSummaries: fire sizes with a year that is missing or not a number: ",
+         paste(utils::head(unique(as.character(year[is.na(year) | bad])), 5), collapse = ", "),
+         ". The fire model's `fireSizes` list must be named by simulation year.")
+  }
+  invisible(TRUE)
+}
+
+## Each replicate's burns counted two ways: the sum of its fire sizes, and the sum of its cumulative burn map
+## (`burnMapTotals`, named by replicate), which adds 1 to a cell each time it burns. They agree when the fire
+## model's fire table and burn map describe the same fires. Where they differ, a warning of class
+## `burnSummariesBurnTotals` names the replicates: the tables use the fire sizes and the maps the burn map, so
+## the two would describe different fires. Returns both totals per replicate.
+checkBurnTotals <- function(fireSizes, burnMapTotals) {
+  reps <- as.integer(names(burnMapTotals))
+  fromFires <- vapply(reps, function(r) {
+    sum(as.numeric(fireSizes$simSize[fireSizes$rep %in% r]), na.rm = TRUE)
+  }, numeric(1))
+  out <- data.frame(rep = reps, fireSizes = fromFires, burnMap = unname(as.numeric(burnMapTotals)))
+  bad <- out[out$fireSizes != out$burnMap, ]
+  if (nrow(bad)) {
+    warning(warningCondition(paste0(
+      "burnSummaries: the fire sizes and the burn map count different burns for replicate(s) ",
+      paste(sprintf("%d (%g from fire sizes, %g on the burn map)", bad$rep, bad$fireSizes, bad$burnMap),
+            collapse = "; "),
+      ". The fire-regime tables use the fire sizes; the burn maps use the burn map."
+    ), class = "burnSummariesBurnTotals"))
+  }
+  invisible(out)
+}
+
+## Stops unless `r` is on a projected grid in metres: areas are cell counts times the cell size, taken as m.
+## On a lon/lat grid the cell size is in degrees, and in a CRS in feet it is in feet.
+checkMetreGrid <- function(r) {
+  u <- suppressWarnings(terra::linearUnits(r))
+  if (!isTRUE(all.equal(u, 1))) {
+    stop("burnSummaries: the flammable map must be on a projected grid in metres; its CRS ",
+         if (isTRUE(u == 0)) "is lon/lat" else if (is.na(u)) "is missing" else paste("has units of", u, "m"),
+         ".")
+  }
+  invisible(r)
 }
 
 ## One row per fire from the rows of `fireSizes`. LandMine (>= 1.0.13) records a fire that stalls in the
