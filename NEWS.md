@@ -11,7 +11,7 @@
 * New parameter `.rep` (single mode): the replicate this run is, as `setupProject()` sets it in
   `.globals$.rep`. When it is `NA` (the default), the replicate is `reps` if it names one, else the last
   `repNN` folder of `outputPath`, as before.
-* Multi mode uses SpaDES.core's replicate helpers (SpaDES.core >= 3.2.1.9075): the replicate numbers are the
+* Multi mode uses SpaDES.core's replicate helpers (SpaDES.core >= 3.2.1.9077, PredictiveEcology/SpaDES.core#543): the replicate numbers are the
   names of `dirnamesFromSet()`'s result, each replicate's files come from `repFiles()`, and each replicate's
   fire sizes are tagged with `tagReplicate()`. The module's own copies are gone; the behaviour is the same,
   except that a replicate directory whose name does not end in its number no longer stops multi mode.

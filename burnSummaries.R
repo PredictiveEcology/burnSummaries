@@ -27,9 +27,8 @@ defineModule(sim, list(
                   "ggplot2", "ggspatial", "googledrive", "patchwork",
                   "reproducible", "sf",
                   ## dirnamesFromSet() (bare-number replicate folders), resolveSimYears(), padYears();
-                  ## 3.2.1.9075: dirnamesFromSet() named by replicate id, repFiles(), tagReplicate()
-                  ## (PROVISIONAL: the version the replicate-helpers PR merges as)
-                  "PredictiveEcology/SpaDES.core@development (>= 3.2.1.9075)",
+                  ## 3.2.1.9077: dirnamesFromSet() named by replicate id, repFiles(), tagReplicate()
+                  "PredictiveEcology/SpaDES.core@development (>= 3.2.1.9077)",
                   ## repair_geoms(): supplied fire polygons are repaired as fireregimetools repairs the download
                   "FOR-CAST/spatialutils@main",
                   "terra", "tidyterra"),
