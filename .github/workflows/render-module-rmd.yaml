@@ -43,3 +43,7 @@ jobs:
       extra-files: figures/moduleVersionBadge.png
       ## The old file installed these beyond the called workflow's default set.
       extra-apt: libfribidi-dev libharfbuzz-dev libuv1-dev
+    ## The development ruleset rejects a push by GitHub Actions; the docs-bot app may
+    ## bypass it, so the rendered .md is pushed as the app.
+    secrets:
+      DOCS_BOT_KEY: ${{ secrets.DOCS_BOT_KEY }}
