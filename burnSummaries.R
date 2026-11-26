@@ -22,8 +22,9 @@ defineModule(sim, list(
   ## fireregimetools uses libarchive for extraction when it is installed, which handles the zip64
   ## archives R's internal unzip cannot -- so keep it available.
   reqdPkgs = list("archive", "data.table", "dplyr", "httr2", "PredictiveEcology/LandR@development",
-                  ## filter_fire_records(): the observed fires of `fireCauses`, without prescribed burns (9012)
-                  "FOR-CAST/fireregimetools@main (>= 0.1.0.9012)",
+                  ## filter_fire_records(): the observed fires of `fireCauses`, without prescribed burns (9012);
+                  ## 0.1.2: documents that load_nbac_polys() keeps NFIREID, which groups split NBAC fires
+                  "FOR-CAST/fireregimetools@main (>= 0.1.2)",
                   "ggplot2", "ggspatial", "googledrive", "patchwork",
                   "reproducible", "sf",
                   ## dirnamesFromSet() (bare-number replicate folders), resolveSimYears(), padYears();

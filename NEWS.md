@@ -1,5 +1,6 @@
 # burnSummaries (development version)
 
+* Requires fireregimetools 0.1.2 or later.
 * The observed fire regime counts a fire that NBAC split at a provincial, territorial or national park
   boundary once: NBAC polygons that share an `NFIREID` in a year are one fire, and their burnable cells are
   summed, as LandMine's pieces are. Each NFDB polygon is still one fire, and the burn maps are unchanged.
