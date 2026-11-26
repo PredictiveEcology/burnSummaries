@@ -1,3 +1,5 @@
+# burnSummaries (development version)
+
 # burnSummaries 2.0.0
 
 ## Documentation
