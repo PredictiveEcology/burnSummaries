@@ -1,3 +1,5 @@
+# burnSummaries (development version)
+
 # burnSummaries 2.0.1
 
 * Requires fireregimetools 0.1.2 or later.
