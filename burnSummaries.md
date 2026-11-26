@@ -1,6 +1,6 @@
 ---
 title: "burnSummaries Manual"
-subtitle: "v.2.0.0"
+subtitle: "v.2.0.0.9000"
 date: "Last updated: 2026-11-26"
 output:
   bookdown::html_document2:
@@ -32,7 +32,7 @@ always_allow_html: true
 
 
 
-[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries/commit/cf2cf6f2d7cdeadd8df475209365137925b18ad0)
+[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries/commit/7d943c09ea071282c99d2d92ba5920ee54c62778)
 
 [![Issues-badge](figures/issuesBadge.png)](https://github.com/PredictiveEcology/burnSummaries/issues)
 
