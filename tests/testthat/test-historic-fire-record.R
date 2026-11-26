@@ -20,7 +20,7 @@ test_that("NFDB fills only the years before NBAC begins, not later years NBAC la
   nbac <- yearPolys(c(1980, 1995))
   nfdb <- yearPolys(c(1950, 1971, 1972, 1985, 1980))
   fires <- suppressMessages(historicFirePolys(nbac, nfdb, nbacStartYear = 1972L))
-  expect_identical(names(fires), "YEAR")
+  expect_identical(names(fires), c("YEAR", "NFIREID"))
   ## NBAC has no fire here in 1972 or 1985, but it covers those years, so the NFDB's are not used
   expect_identical(sort(fires$YEAR), c(1950L, 1971L, 1980L, 1995L))
 })
@@ -49,7 +49,8 @@ test_that("either record may be empty", {
   expect_identical(nbacOnly$YEAR, 1990L)
   nfdbOnly <- suppressMessages(historicFirePolys(yearPolys(1990)[0, ], yearPolys(1960), 1972L))
   expect_identical(nfdbOnly$YEAR, 1960L)
-  expect_identical(names(nfdbOnly), "YEAR")
+  expect_identical(names(nfdbOnly), c("YEAR", "NFIREID"))
+  expect_true(is.na(nfdbOnly$NFIREID)) ## the NFDB has no NFIREID
 })
 
 test_that("the log names the backfilled years and the NFDB polygons left out", {

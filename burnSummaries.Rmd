@@ -169,7 +169,9 @@ A simulated map of time since fire therefore need not look like the negative exp
 
 Each replicate's number of fires and largest fire cover the years of the run, or the years set by `regimePeriod`.
 LandMine records a fire that runs short of its target size and is re-ignited as several pieces, which together are one fire; the pieces need not be contiguous, so a mapped record could show such a fire as several perimeters.
-Each observed perimeter is one fire, counted when it covers burnable land, and its size is the burnable land inside it.
+NBAC splits a fire that crosses the boundary of a province, territory or national park into one polygon per jurisdiction, and gives the polygons the fire's ID for that year, `NFIREID` [@Hall:2020, p. 883].
+burnSummaries counts those polygons as one fire, as it does LandMine's pieces; each NFDB polygon is one fire.
+An observed fire is counted when it covers burnable land, and its size is the burnable land inside it.
 
 Most fires are small, but a few large ones burn most of the area: in Canada in 1959 to 1997, fires larger than 200 ha were 3.1% of all fires and accounted for about 97% of the area burned [@Stocks:2002].
 Several national analyses of fire regimes count only fires of 200 ha or more [@Stocks:2002; @Parisien:2006; @Hanes:2019].

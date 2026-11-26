@@ -1,5 +1,6 @@
-## Awkward observed fire polygons: a fire mapped as several parts, one straddling the edge of the grid, and
-## supplied polygons that are invalid, empty or carry a YEAR that is text.
+## Awkward observed fire polygons: a fire mapped as several parts or split at a boundary into several
+## polygons, one straddling the edge of the grid, and supplied polygons that are invalid, empty or carry a
+## YEAR that is text.
 
 ## A 4 x 4 grid of 1 ha cells (100 m; EPSG:3400 units are metres), every cell burnable.
 recordGrid <- function() {
@@ -62,4 +63,30 @@ test_that("supplied fire polygons are repaired, and a YEAR given as text is read
   h <- terra::values(terra::rast(file.path(out, "meanAnnualCumulBurnMapHistoric.tif")), mat = FALSE)
   expect_equal(h[1], 1) ## cell 1 burned in the one year of record
   expect_equal(h[2], 0)
+})
+
+test_that("NBAC polygons sharing an NFIREID in a year are one fire; each NFDB polygon is one fire", {
+  r <- recordGrid()
+  ## NBAC splits a fire at a provincial, territorial or park boundary into polygons that share its
+  ## NFIREID in that year. NFIREID 7 in 2000 is one fire in cells 1 and 2; NFIREID 7 in 2001 is another
+  ## fire (the ID is assigned per year). Through 2.0.0 each polygon counted as a fire.
+  nbac <- cellPolys(r, c(1, 2, 3), c(2000, 2000, 2001))
+  nbac$NFIREID <- c(7, 7, 7)
+  ## two NFDB fires in one year, which have no NFIREID: two fires, not grouped by their missing ID
+  nfdb <- cellPolys(r, c(5, 6), c(1960, 1960))
+  fires <- suppressMessages(historicFirePolys(nbac, nfdb, nbacStartYear = 1972L))
+  expect_identical(sort(fires$NFIREID, na.last = TRUE), c(7, 7, 7, NA, NA))
+  yrs <- 1960:2009
+  h <- historicBurnMap(fires, r, rep(TRUE, 16), yrs)
+  expect_equal(which(terra::values(h, mat = FALSE) > 0), c(1L, 2L, 3L, 5L, 6L)) ## the map is per cell, as before
+  msgs <- testthat::capture_messages(o <- observedFireRegime(fires, h, r, yrs))
+  expect_identical(o$nFires, 4L)
+  expect_equal(o$largestFireHa, 2) ## 1 ha cells: both pieces of the 2000 fire
+  expect_equal(o$areaBurnedHaPerYear, 5 / 50)
+  expect_match(msgs, "5 polygons are 4 fires", all = FALSE)
+
+  ## without the IDs, each polygon is a fire
+  o1 <- observedFireRegime(fires[, "YEAR"], h, r, yrs)
+  expect_identical(o1$nFires, 5L)
+  expect_equal(o1$largestFireHa, 1)
 })

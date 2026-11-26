@@ -7,7 +7,7 @@ defineModule(sim, list(
            comment = c(ORCID = "0000-0001-7146-8135"))
   ),
   childModules = character(0),
-  version = list(burnSummaries = "2.0.0.9000"),
+  version = list(burnSummaries = "2.0.0.9001"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
@@ -108,8 +108,9 @@ defineModule(sim, list(
                               "One of `burnSummary` or `fireSizes` is required in single mode.")),
     expectsInput("firePolys", "list", sourceURL = NA,
                  desc = paste("Optional, multi mode. List of `SpatVector` polygons of observed fires,",
-                              "each with a `YEAR` column. If not supplied, NBAC perimeters",
-                              "(with NFDB backfill) are downloaded.")),
+                              "each with a `YEAR` column. Polygons that share an `NFIREID` (NBAC's fire ID)",
+                              "in a year are one fire; without that column each polygon is one fire.",
+                              "If not supplied, NBAC perimeters (with NFDB backfill) are downloaded.")),
     expectsInput("fireReturnInterval", "SpatRaster",
                  desc = paste("Fire return interval (years), on the grid of the saved `flammableMap`;",
                               "LandMine's input of that name. Multi mode, optional: both burn maps are",
@@ -531,17 +532,21 @@ InitMulti <- function(sim) {
   return(invisible(sim))
 }
 
-## The historic fire record, with only a `YEAR` column: NBAC perimeters from `nbacStartYear` on, and
-## NFDB polygons for the years before it. The boundary is a fixed year, not the years NBAC has inside
+## The historic fire record, with columns `YEAR` and `NFIREID`: NBAC perimeters from `nbacStartYear` on,
+## and NFDB polygons for the years before it. The boundary is a fixed year, not the years NBAC has inside
 ## the study area: a year from 1972 on with no NBAC fire here is a year in which NBAC mapped none, and
 ## filling it from the NFDB would mix the two products. NFDB polygons with no year (`YEAR` -9999, 0
 ## or missing) are dropped. Prescribed burns are dropped from both, and with `fireCauses`, fires of
-## other causes (fireregimetools::filter_fire_records()).
+## other causes (fireregimetools::filter_fire_records()). `NFIREID` is NBAC's fire ID, which the
+## pieces of a fire split at a jurisdiction boundary share in a year (observedFireCells()); it is NA
+## for the NFDB polygons, which have no such ID, and for an NBAC record without the column.
 historicFirePolys <- function(nbac, nfdb, nbacStartYear, fireCauses = NULL) {
-  nbac <- fireregimetools::filter_fire_records(nbac[which(nbac$YEAR >= nbacStartYear), ], fireCauses, "nbac")[, "YEAR"]
+  nbac <- fireregimetools::filter_fire_records(nbac[which(nbac$YEAR >= nbacStartYear), ], fireCauses, "nbac") |>
+    yearAndFireID()
   nDated <- sum(nfdb$YEAR > 0, na.rm = TRUE)
   before <- nfdb[which(nfdb$YEAR > 0 & nfdb$YEAR < nbacStartYear), ]
-  backfill <- fireregimetools::filter_fire_records(before, fireCauses, "nfdb")[, "YEAR"]
+  backfill <- fireregimetools::filter_fire_records(before, fireCauses, "nfdb") |>
+    yearAndFireID(nfireid = FALSE)
 
   years <- sort(unique(backfill$YEAR))
   message(sprintf(
@@ -562,6 +567,13 @@ historicFirePolys <- function(nbac, nfdb, nbacStartYear, fireCauses = NULL) {
   } else {
     tidyterra::bind_spat_rows(nbac, backfill)
   }
+}
+
+## `x` with only its `YEAR` and `NFIREID` columns; `NFIREID` NA when `nfireid` is FALSE or `x` has none.
+yearAndFireID <- function(x, nfireid = TRUE) {
+  out <- x[, "YEAR"]
+  out$NFIREID <- if (isTRUE(nfireid) && "NFIREID" %in% names(x)) as.numeric(x$NFIREID) else rep(NA_real_, nrow(x))
+  out
 }
 
 ## The cells both burn maps cover (multi mode), as a logical vector over the cells of `flammableMap`:
@@ -872,24 +884,40 @@ simulatedFireRegime <- function(fireSizes, reps, simTimes, pixelHa, period = sim
 
 ## The observed fire regime over the same land as the simulated one: area burned per year from the historic
 ## mean annual burn map (`historic`, NA off the burnable cells), and the number of fires and the largest fire
-## from the burnable land inside each polygon (a fire with no burnable cell is not counted). `burnableMap` is
-## 1 on the burnable cells (burnableCells()), NA elsewhere. `recordYears` is historicRecordYears(); with no
-## record, the first and last years are NA.
+## from the burnable land inside each fire (observedFireCells(); a fire with no burnable cell is not counted).
+## `burnableMap` is 1 on the burnable cells (burnableCells()), NA elsewhere. `recordYears` is
+## historicRecordYears(); with no record, the first and last years are NA.
 observedFireRegime <- function(firePolys, historic, burnableMap, recordYears) {
   pixelHa <- prod(terra::res(burnableMap)) / 10^4
   ## `historic` is a share of each (coarse) cell's burnable area; the burnable cells it holds turn it into ha
   fact <- round(terra::res(historic)[1] / terra::res(burnableMap)[1])
   burnableIn <- if (fact > 1) terra::aggregate(burnableMap, fact, "sum", na.rm = TRUE) else burnableMap
-  burnableCellsIn <- if (nrow(firePolys)) {
-    terra::extract(burnableMap, firePolys, fun = sum, na.rm = TRUE, ID = FALSE)[[1]]
-  } else numeric(0)
-  largest <- if (length(burnableCellsIn)) max(burnableCellsIn, na.rm = TRUE) * pixelHa else 0
+  burnableCellsIn <- observedFireCells(firePolys, burnableMap)
   span <- if (length(recordYears)) range(recordYears) else c(NA_integer_, NA_integer_)
   data.frame(source = "observed", rep = NA_integer_, firstYear = span[1], lastYear = span[2],
-             nFires = sum(burnableCellsIn > 0, na.rm = TRUE),
+             nFires = sum(burnableCellsIn > 0),
              areaBurnedHaPerYear = sum(terra::values(historic, mat = FALSE) * terra::values(burnableIn, mat = FALSE),
                                        na.rm = TRUE) * pixelHa,
-             largestFireHa = if (is.finite(largest)) largest else 0)
+             largestFireHa = if (length(burnableCellsIn)) max(burnableCellsIn) * pixelHa else 0)
+}
+
+## The burnable cells of each observed fire (0 for a fire with none), one value per fire. NBAC cuts a fire
+## that crosses a provincial, territorial, national park or DND boundary into one polygon per side, and the
+## polygons share the fire's `NFIREID`, an ID NBAC assigns per year; their cells are summed into one fire,
+## as firesFromPieces() sums LandMine's pieces. A polygon with no `NFIREID` (an NFDB fire, or supplied
+## polygons without the column) is one fire. Through 2.0.0 each polygon was a fire.
+observedFireCells <- function(firePolys, burnableMap) {
+  if (nrow(firePolys) == 0L) return(numeric(0))
+  cells <- terra::extract(burnableMap, firePolys, fun = sum, na.rm = TRUE, ID = FALSE)[[1]]
+  cells[is.na(cells)] <- 0
+  id <- if ("NFIREID" %in% names(firePolys)) firePolys$NFIREID else rep(NA, nrow(firePolys))
+  fire <- ifelse(is.na(id), paste("polygon", seq_along(cells)), paste(firePolys$YEAR, id))
+  fire <- factor(fire, levels = unique(fire))
+  if (nlevels(fire) < length(fire)) {
+    message(sprintf("  observed fires: %d polygons are %d fires (pieces of a fire share its NFIREID in a year)",
+                    length(fire), nlevels(fire)))
+  }
+  as.numeric(tapply(cells, fire, sum))
 }
 
 ## Fire per block of `blockYears` years per replicate: number of fires and area burned (ha). A block with
