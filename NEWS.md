@@ -6,6 +6,9 @@
   Through 2.0.0 each polygon was a fire, so the observed `nFires` was higher and `largestFireHa` could be
   lower where a fire crossed a boundary inside the study area. Supplied `firePolys` are grouped the same way
   when they carry `NFIREID`.
+* The README says which unburned land the observed burn rate includes: NBAC's Landsat-mapped fires leave out
+  unburned islands and water as holes, which the burn map respects, so only perimeters drawn without holes
+  and patches smaller than a cell add unburned land.
 
 # burnSummaries 2.0.0
 
