@@ -1,6 +1,6 @@
 ---
 title: "burnSummaries Manual"
-subtitle: "v.2.0.0.9000"
+subtitle: "v.2.0.0.9001"
 date: "Last updated: 2026-11-26"
 output:
   bookdown::html_document2:
@@ -32,7 +32,7 @@ always_allow_html: true
 
 
 
-[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries/commit/7d943c09ea071282c99d2d92ba5920ee54c62778)
+[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries/commit/0ac910844122d26f306f011dde492eed1e3b98e5)
 
 [![Issues-badge](figures/issuesBadge.png)](https://github.com/PredictiveEcology/burnSummaries/issues)
 
@@ -106,7 +106,9 @@ A simulated map of time since fire therefore need not look like the negative exp
 
 Each replicate's number of fires and largest fire cover the years of the run, or the years set by `regimePeriod`.
 LandMine records a fire that runs short of its target size and is re-ignited as several pieces, which together are one fire; the pieces need not be contiguous, so a mapped record could show such a fire as several perimeters.
-Each observed perimeter is one fire, counted when it covers burnable land, and its size is the burnable land inside it.
+NBAC splits a fire that crosses the boundary of a province, territory or national park into one polygon per jurisdiction, and gives the polygons the fire's ID for that year, `NFIREID` [@Hall:2020, p. 883].
+burnSummaries counts those polygons as one fire, as it does LandMine's pieces; each NFDB polygon is one fire.
+An observed fire is counted when it covers burnable land, and its size is the burnable land inside it.
 
 Most fires are small, but a few large ones burn most of the area: in Canada in 1959 to 1997, fires larger than 200 ha were 3.1% of all fires and accounted for about 97% of the area burned [@Stocks:2002].
 Several national analyses of fire regimes count only fires of 200 ha or more [@Stocks:2002; @Parisien:2006; @Hanes:2019].
@@ -124,10 +126,14 @@ For LandMine, the expected sizes are the target size drawn for each fire, compar
 #### The observed record
 
 NBAC combines fire polygons mapped from 30 m Landsat imagery with high-quality agency polygons, and maps the remaining fires from coarser satellite data [@Hall:2020].
-Mapped fire perimeters include unburned patches.
+A fire perimeter can enclose land that did not burn.
 For the fires of 1984 to 2009 in Yosemite and Glacier national parks and the Yukon-Charley Rivers National Preserve in Alaska, 35%, 14% and 13% of the area inside fire perimeters was unburned [@Kolden:2012, p. 42].
-For 24 fires in the Alberta foothills, all six burn-pattern metrics measured were sensitive to how a fire's boundary was drawn [@Andison:2012], and fire management agencies remove unburned islands from their perimeters inconsistently [@Hall:2020].
-burnSummaries counts a cell as burned when a perimeter covers its centre, so the observed burn rate includes unburned patches inside perimeters, while the simulated rate counts only the cells a fire burned.
+For 24 fires in the Alberta foothills, all six burn-pattern metrics measured were sensitive to how a fire's boundary was drawn [@Andison:2012].
+NBAC's Landsat burn mapping leaves unburned forest islands and water out of a fire's polygon, as holes in it [@Hall:2020, p. 879], while fire management agencies remove them from their perimeters inconsistently [@Hall:2020].
+In 2004 to 2016, unburned forest, water or both had been removed from the polygons that held about 90% of NBAC's burned area [@Hall:2020, p. 885].
+burnSummaries counts a cell as burned when a fire polygon covers the cell's centre, so a cell whose centre lies in a hole is not counted.
+The observed burn rate therefore leaves out the unburned islands and water that were mapped, but includes the unburned land inside perimeters drawn without holes, as many agency perimeters are, and unburned patches smaller than a cell.
+The simulated rate counts only the cells a fire burned.
 
 The observed record is also not a constant baseline.
 Nationally, area burned and the number of fires of 200 ha or more increased in Canada from 1959 to 2015 [@Hanes:2019].
@@ -177,7 +183,7 @@ In multi mode it reads the replicates' saved files, listed in `outputsDF` or fou
   <tr>
    <td style="text-align:left;"> firePolys </td>
    <td style="text-align:left;"> list </td>
-   <td style="text-align:left;"> Optional, multi mode. List of `SpatVector` polygons of observed fires, each with a `YEAR` column. If not supplied, NBAC perimeters (with NFDB backfill) are downloaded. </td>
+   <td style="text-align:left;"> Optional, multi mode. List of `SpatVector` polygons of observed fires, each with a `YEAR` column. Polygons that share an `NFIREID` (NBAC's fire ID) in a year are one fire; without that column each polygon is one fire. If not supplied, NBAC perimeters (with NFDB backfill) are downloaded. </td>
    <td style="text-align:left;"> NA </td>
   </tr>
   <tr>
