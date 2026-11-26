@@ -22,10 +22,12 @@ test_that("inputs are the expected names and classes", {
     c(
       "burnMap"                        = "SpatRaster",
       "burnSummary"                    = "data.table",
+      "firePolys"                      = "list",
       "fireReturnInterval"             = "SpatRaster",
       "fireSizes"                      = "list",
       "flammableMap"                   = "SpatRaster",
       "nonForest_timeSinceDisturbance" = "SpatRaster",
+      "outputsDF"                      = "data.table",
       "rstCurrentBurn"                 = "SpatRaster",
       "rstTimeSinceFire"               = "SpatRaster",
       "studyArea"                      = "SpatVector"
@@ -51,9 +53,9 @@ test_that("parameters are the expected names", {
   expect_identical(
     sort(md$parameters$paramName),
     c(
-      ".plotInitialTime", ".plotInterval", ".plots", ".saveInitialTime",
-      ".saveInterval", ".seed", ".studyAreaName", ".useCache", "dataYear",
-      "fireTimestep", "mode", "nbacStartYear", "reps", "simOutputPath", "simTimes", "summaryInterval",
+      ".plotInitialTime", ".plotInterval", ".plots", ".rep", ".saveInitialTime",
+      ".saveInterval", ".seed", ".studyAreaName", ".useCache", "dataYear", "fireCauses",
+      "fireTimestep", "historicYears", "minCellHa", "mode", "nbacStartYear", "regimePeriod", "reps", "simOutputPath", "simTimes", "summaryInterval",
       "summaryPeriod"
 )
   )
@@ -67,4 +69,11 @@ test_that("loadOrder runs after the renamed burn module", {
   lo <- eval(dm[[1]][[3]]$loadOrder)
   expect_true("fireSense_burn" %in% lo$after)
   expect_false("fireSense" %in% lo$after)
+})
+
+test_that("`simOutputPath` is not part of the module's cache keys", {
+  ## no code reads it: it only names a folder
+  p <- SpaDES.core::moduleMetadata(module = moduleName, path = modulePath)$parameters
+  expect_false(p$cacheKey[p$paramName == "simOutputPath"])
+  expect_true(all(p$cacheKey[p$paramName != "simOutputPath"]))
 })

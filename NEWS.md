@@ -1,4 +1,139 @@
-# burnSummaries (development version)
+# burnSummaries 2.0.0
+
+## Documentation
+
+* The README shows the module's events, the objects each reads and writes, and a figure per event,
+  generated from the code (needs SpaDES.core 3.2.1.9068 or later; older versions leave them out).
+* The README defines each fire-regime metric the module reports, with references.
+
+## Replicates from SpaDES.core; `.rep` (`1.1.0.9012`)
+
+* New parameter `.rep` (single mode): the replicate this run is, as `setupProject()` sets it in
+  `.globals$.rep`. When it is `NA` (the default), the replicate is `reps` if it names one, else the last
+  `repNN` folder of `outputPath`, as before.
+* Multi mode uses SpaDES.core's replicate helpers (SpaDES.core >= 3.2.1.9077, PredictiveEcology/SpaDES.core#543): the replicate numbers are the
+  names of `dirnamesFromSet()`'s result, each replicate's files come from `repFiles()`, and each replicate's
+  fire sizes are tagged with `tagReplicate()`. The module's own copies are gone; the behaviour is the same,
+  except that a replicate directory whose name does not end in its number no longer stops multi mode.
+
+## Errors and warnings instead of silent losses (`1.1.0.9011`)
+
+* Multi mode tags each replicate's fire sizes with the replicate of the directory they were read from. Rows
+  with no replicate take it; rows naming another replicate stop, as a single-mode run given the wrong `reps`
+  would otherwise have its fires counted for that replicate and its own look fire-free.
+* Single mode finds its replicate in the last `repNN` component of `outputPath` when `reps` does not name one.
+  The old pattern ran from the first `rep` and a digit to the end of the path, so `.../rep07/out` gave `NA`.
+* A fire-size year that is missing or not a number stops multi mode; it used to drop the fire from every table.
+* Multi mode stops when the flammable map is not on a projected grid in metres (lon/lat, feet, or no CRS):
+  areas are cell counts times the cell size, taken as metres.
+* Multi mode warns (class `burnSummariesBurnTotals`) when a replicate's fire sizes do not add up to the burns on
+  its burn map: the tables use the one and the maps the other.
+* Supplied `firePolys` are repaired with `spatialutils::repair_geoms()`, as fireregimetools repairs the
+  downloaded record. An invalid polygon of no area was in no map but counted as a fire. A `YEAR` given as text
+  is read as a number, and the log counts the polygons left out for having no year.
+* `stringr` is no longer a dependency; `spatialutils` is.
+
+## Fires counted whole; the observed record's full span (`1.1.0.9010`)
+
+* The fire regime and fire per block tables, and the fire-size figures, count fires, not rows of
+  `fireSizes`. LandMine (>= 1.0.13) records a fire that stalls in the second phase of its reburns as
+  several rows sharing (rep, year, `fireID`); each counted as a fire, so the number of fires was too
+  high and the largest fire was the largest piece. A row with no `fireID` (scfm, fireSense) is one fire.
+  Area burned is unchanged.
+* The expected fire sizes in `expected_number_size_fires.png` and the expected-against-simulated plots
+  are LandMine's `targetSize`, compared with each fire's summed size. `expSize` (LandMine's `maxSize`)
+  equals the burned size by construction, so those plots could not show a fire that fell short. Without
+  `targetSize` (LandMine before 1.0.13) the expected-size plots are skipped, with a message.
+* With `historicYears` unset, the observed record's years are the first to the last year of the record
+  itself (NBAC, and the NFDB years before it, on the grid's extent), not the first to the last year with a
+  fire in the burnable cells. Fire-free years at either end of the record count, as the fire cycle is the
+  area burned over the length of the record; leaving them out overstated the observed rate, more so in a
+  small study area. Runs that set `historicYears` are unchanged.
+
+## Burn maps at cells of at least 100 ha; observed fires by cause (`1.1.0.9007` to `1.1.0.9009`)
+
+* The two mean annual burn maps (`meanAnnualCumulBurnMap.tif`, `meanAnnualCumulBurnMapHistoric.tif`) are now on a
+  coarser grid: the flammable grid aggregated by the smallest whole factor whose cell is at least the new parameter
+  `minCellHa` (default 100 ha; 240 m cells become 1.2 km, 144 ha), as fire perimeters are only meaningful at about
+  100 ha. Values are the mean annual share of the cell's burnable area burned (was: burns per 240 m cell per year).
+  A coarse cell with no burnable cell is `NA`. The observed map counts each year once per cell, however many
+  polygons overlap there. The observed row of `burnSummaries_fireRegime.csv` takes its area from that map.
+* The observed record drops prescribed burns, which no simulation models, and with the new parameter `fireCauses`
+  keeps only the fires of those cause groups (`natural`, `unknown`, `human`, `other`). The default, `NULL`, keeps
+  every cause; fireSense runs set it to the causes their fits model, `c("natural", "unknown")`. The selection is
+  `fireregimetools::filter_fire_records()` (fireregimetools >= 0.1.0.9012), which reads NBAC `FIRECAUS` / NFDB
+  `CAUSE` and finds prescribed burns by `PRESCRIBED`, `FIRE_TYPE`, `CAUSE` and `CAUSE2`. Selecting by cause in a
+  record with no cause column stops. This also changes the fire count and largest fire of the observed regime row.
+* The mean annual burn rates in the log weight each coarse cell by the burnable cells it holds, so they are the
+  share of the burnable area burned per year (was: every coarse cell counted alike, so an edge cell with one
+  burnable cell counted as much as a full one). The maps are unchanged.
+
+## `simOutputPath` is not part of the event cache keys (`1.1.0.9006`)
+
+* `simOutputPath` is no longer part of the module's event cache keys (`defineParameter(cacheKey = FALSE)`;
+  SpaDES.core >= 3.2.1.9057). No code reads it; its default, `outputPath(sim)`, differs between machines. The
+  event cache keys of this module change once.
+
+## Time since fire is reset in the year a cell burns (`1.1.0.9005`)
+
+* `update_tsf` (single mode) now runs after the fire model's burn each year (priority 8), so a cell reads 0 in
+  the year it burns, as the fire model's own count does (e.g. scfmSpread's `timeSinceFire`). At the default
+  priority (5) it ran before fireSense_burn's burn (5.13) and scfmSpread's (7.5), and reset a burned cell a
+  year late; with LandMine (Burn at 2.5) nothing changes.
+
+## Fire regime window, observed fire count, no `reportingPolygons`
+
+* New parameter `regimePeriod` (multi mode, default `c(NA, NA)`): the first and last simulation year the simulated
+  rows of `burnSummaries_fireRegime.csv` cover, e.g. `c(700L, 1000L)` to leave out a run's transient. The default
+  is the whole run, as before. The burn maps and `burnSummaries_fireBlocks.csv` still cover the whole run.
+* The observed row counts fires (`nFires`) on the burnable cells only, as its area and largest fire already did
+  (was: every fire in the grid's extent).
+* The simulated rows still count every cell a fire burned: `fireSizes` has no cell locations, so they cannot be
+  cut to the burnable cells.
+* `burnSummaries_fireBlocks.csv` blocks now cover the years after `block` up to `block + summaryInterval`, like
+  `regimePeriod`; fires are stamped years 1 to the end, so the last year's fires fell outside every block.
+  The `fire_per_block.png` caption says burnable cells (was: flammable).
+* Multi mode no longer requires `reportingPolygons`, which the module never used.
+
+## Supplied fire polygons and `historicYears` with the burnable cells
+
+* The observed record is the supplied `firePolys` when given, else the downloaded NBAC record with
+  NFDB before `nbacStartYear`. Either way, undated fires (`YEAR` 0, -9999 or missing) are dropped and
+  `historicYears` limits it to those years. The historic map counts it on the burnable cells only.
+* Supplied `firePolys` are projected to the grid's CRS and cropped to its extent, as the downloaded
+  record is. In another CRS, `rasterize()` counted no cell of them, without an error, so the
+  historic map was 0 and the log said there was no fire in the burnable cells.
+* The historic map divides by `historicYears`' span when it is set (fire-free years in it count), and
+  otherwise by the first to the last year with a fire in the burnable cells.
+* The observed row of `burnSummaries_fireRegime.csv` has the same land: its area burned per year is
+  the historic map's, and its largest fire is the burnable land inside the polygon (was: the flammable
+  land). Without `studyArea` and `fireReturnInterval` these are the flammable cells, as before. Its
+  first and last years are NA when there is no record.
+
+* Multi mode finds replicate folders named by the bare number (`.../370/16/`, as `SpaDES.project::pathBuild()` writes them), not only `rep16`: SpaDES.core >= 3.2.1.9057 (PredictiveEcology/SpaDES.core#515).
+
+* `dataYear` is numeric (`2020`, was the integer `2020L`), as in the vegetation modules, and `.inputObjects` stops when another module has a different `dataYear` (`paramCheckOtherMods()` compares with `identical()`, so `2020L` would not match `2020`).
+
+## Fire regime tables in multi mode
+
+* Multi mode writes `burnSummaries_fireRegime.csv`: per replicate, the number of fires, the area burned
+  per year and the largest fire (ha), plus one row for the observed record over the same flammable land.
+  It also writes `burnSummaries_fireBlocks.csv` (fires and area burned per `summaryInterval` years, per
+  replicate) and draws them in `fire_per_block.png`, with the observed burn rate for comparison.
+* New parameter `historicYears` (multi mode) limits the observed record to those years, for the
+  historic burn map and the observed fire regime. The default, `NA`, keeps every year, as before.
+* Single mode, and so what each replicate writes, is unchanged.
+
+## Multi mode reads replicate files from `outputsDF`
+
+* `InitMulti()` and `FireSummaries()` can take each replicate's burn map, flammable map and fire-size CSV from `outputsDF` (the combined `outputs(sim)` of the runs being summarised), matching each replicate directory and file name exactly. Without `outputsDF`, they read `outputPath(sim)/rep<NN>` as before.
+* Observed fire perimeters can be supplied as `firePolys`, a list of `SpatVector`s with a `YEAR` column, instead of being downloaded.
+* Needs SpaDES.core >= 3.2.1.9057 (`dirnamesFromSet()`, `resolveSimYears()`, `padYears()`; from 3.2.1.9038 `dirnamesFromSet(leafOnly = FALSE)` returns the replicate folder, not a subfolder).
+
+## `summaryPeriod` is a simulation time
+
+* `summaryPeriod` is now absolute simulation times everywhere. `init` added `start(sim)` to it again, both when scheduling the first `save_single` snapshot and when listing the snapshot times, so `summaryPeriod = c(2020, 3020)` in a run starting at 2020 summarised 4040 to 5040, and no `rstTimeSinceFire` was saved during the summary period. Runs starting at 0 are unchanged.
+* `summaryPeriod` now defaults to `NA`, meaning the last 30% of the run: still years 700 to 1000 of a 1000-year run, but a shorter run summarises its own last 30% (with a message) instead of finding no summary years. A supplied `summaryPeriod` outside the run's times stops with an error naming both ranges.
 
 ## Historic and simulated burn maps cover the same cells; the historic map is a rate per year (`1.1.0.9003`)
 
@@ -20,7 +155,7 @@
   burnable cells (it held values in non-flammable cells and outside the study area), 0 in a burnable
   cell with no recorded fire (was NA), and has the new divisor. The simulated map is now written too,
   as `meanAnnualCumulBurnMap.tif`, on the same cells, and `cumulative_burn_maps.png` shows both on
-  these cells only. The log also gives both maps' mean rate over these cells. The fire-size CSVs and
+  these cells only, on one fill scale with one legend, in burns per cell per year. The log also gives both maps' mean rate over these cells. The fire-size CSVs and
   figures are unchanged.
 
 ## NFDB polygons fill only the years before NBAC begins (`1.1.0.9002`)
@@ -56,6 +191,7 @@
 * **This changes the year-0 time-since-fire file of every replicate**, and so any current-condition
   summary read from it (e.g. NRV_summary's time-since-fire age classes). The later snapshots,
   `burnMap` and `flammableMap` are unchanged.
+* In single mode `save_single` is also scheduled once when the summary period starts at the end of the simulation, instead of twice at the same time, which wasted work and broke cache reuse on reruns.
 
 # burnSummaries 1.1.0
 

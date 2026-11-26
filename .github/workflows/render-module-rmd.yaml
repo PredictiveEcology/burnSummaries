@@ -13,11 +13,13 @@ on:
       - main
       - master
       - development
+      - modsForFireSense
   push:
     branches:
       - main
       - master
       - development
+      - modsForFireSense
     paths:
       - .github/workflows/render-module-rmd.yaml
       - burnSummaries.Rmd
@@ -36,5 +38,12 @@ jobs:
     uses: PredictiveEcology/actions/.github/workflows/render-module-rmd.yaml@main
     with:
       module: burnSummaries
+      ## Commit the refreshed version badge with the .md, so the README shows the
+      ## current version.
+      extra-files: figures/moduleVersionBadge.png
       ## The old file installed these beyond the called workflow's default set.
       extra-apt: libfribidi-dev libharfbuzz-dev libuv1-dev
+    ## The development ruleset rejects a push by GitHub Actions; the docs-bot app may
+    ## bypass it, so the rendered .md is pushed as the app.
+    secrets:
+      DOCS_BOT_KEY: ${{ secrets.DOCS_BOT_KEY }}
