@@ -1,4 +1,4 @@
-# burnSummaries (development version)
+# burnSummaries 2.0.1
 
 * Requires fireregimetools 0.1.2 or later.
 * The observed fire regime counts a fire that NBAC split at a provincial, territorial or national park
