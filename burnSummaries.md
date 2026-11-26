@@ -1,7 +1,7 @@
 ---
 title: "burnSummaries Manual"
-subtitle: "v.1.1.0.9012"
-date: "Last updated: 2026-11-25"
+subtitle: "v.2.0.0"
+date: "Last updated: 2026-11-26"
 output:
   bookdown::html_document2:
     toc: true
@@ -32,7 +32,7 @@ always_allow_html: true
 
 
 
-[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries/commit/3f37a628f4530a8000d7dcea9c4af4a9d82e276d)
+[![module-version-Badge](figures/moduleVersionBadge.png)](https://github.com/PredictiveEcology/burnSummaries/commit/cf2cf6f2d7cdeadd8df475209365137925b18ad0)
 
 [![Issues-badge](figures/issuesBadge.png)](https://github.com/PredictiveEcology/burnSummaries/issues)
 
@@ -489,37 +489,37 @@ Table \@ref(tab:eventObjects-burnSummaries) lists, for each object, the code tha
 <tr>
    <td style="text-align:left;padding-left: 2em;" indentlevel="1"> flammableMap </td>
    <td style="text-align:left;">  </td>
-   <td style="text-align:left;"> init: InitSingle(), save_single (single) </td>
+   <td style="text-align:left;"> init: InitSingle() (single), save_single (single) </td>
   </tr>
   <tr>
    <td style="text-align:left;padding-left: 2em;" indentlevel="1"> nonForest_timeSinceDisturbance </td>
    <td style="text-align:left;">  </td>
-   <td style="text-align:left;"> init: InitSingle() </td>
+   <td style="text-align:left;"> init: InitSingle() (single) </td>
   </tr>
   <tr>
    <td style="text-align:left;padding-left: 2em;" indentlevel="1"> rstCurrentBurn </td>
    <td style="text-align:left;">  </td>
-   <td style="text-align:left;"> init: InitSingle(), update_tsf (single) </td>
+   <td style="text-align:left;"> init: InitSingle() (single), update_tsf (single) </td>
   </tr>
   <tr>
    <td style="text-align:left;padding-left: 2em;" indentlevel="1"> firePolys </td>
    <td style="text-align:left;">  </td>
-   <td style="text-align:left;"> init: InitMulti() </td>
+   <td style="text-align:left;"> init: InitMulti() (multi) </td>
   </tr>
   <tr>
    <td style="text-align:left;padding-left: 2em;" indentlevel="1"> fireReturnInterval </td>
    <td style="text-align:left;">  </td>
-   <td style="text-align:left;"> init: InitMulti() </td>
+   <td style="text-align:left;"> init: InitMulti() (multi) </td>
   </tr>
   <tr>
    <td style="text-align:left;padding-left: 2em;" indentlevel="1"> outputsDF </td>
    <td style="text-align:left;">  </td>
-   <td style="text-align:left;"> init: InitMulti() </td>
+   <td style="text-align:left;"> init: InitMulti() (multi) </td>
   </tr>
   <tr>
    <td style="text-align:left;padding-left: 2em;" indentlevel="1"> studyArea </td>
    <td style="text-align:left;">  </td>
-   <td style="text-align:left;"> init: InitMulti() </td>
+   <td style="text-align:left;"> init: InitMulti() (multi) </td>
   </tr>
   <tr>
    <td style="text-align:left;padding-left: 2em;" indentlevel="1"> burnMap </td>
@@ -534,7 +534,7 @@ Table \@ref(tab:eventObjects-burnSummaries) lists, for each object, the code tha
   <tr grouplength="2"><td colspan="3" style="border-bottom: 1px solid;"><strong>Inputs the module also updates</strong></td></tr>
 <tr>
    <td style="text-align:left;padding-left: 2em;" indentlevel="1"> rstTimeSinceFire </td>
-   <td style="text-align:left;"> .inputObjects (default), init: InitSingle(), update_tsf (single) </td>
+   <td style="text-align:left;"> .inputObjects (default), init: InitSingle() (single), update_tsf (single) </td>
    <td style="text-align:left;"> save_single (single) </td>
   </tr>
   <tr>
@@ -558,7 +558,7 @@ during simInit: defaults for inputs not supplied
 
 #### InitSingle() {-}
 
-init event, step 3 of 4
+mode = "single": init event, step 3 of 3
 
 ![](figures/burnSummaries_io_init_InitSingle.png){width=100%}
 
@@ -566,7 +566,7 @@ init event, step 3 of 4
 
 #### InitMulti() {-}
 
-init event, step 4 of 4
+mode = "multi": init event, step 3 of 3
 
 ![](figures/burnSummaries_io_init_InitMulti.png){width=100%}
 
